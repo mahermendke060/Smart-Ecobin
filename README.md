@@ -6,7 +6,7 @@
 
 **Gamifying waste management with smart bins & rewards**  
 
-[🚀 Live Demo]([https://your-demo-link.com](https://greenbin-rewards.lovable.app)).
+[🚀 Live Demo]([https://greenbin-rewards.lovable.app]).
 
 </div>
 
