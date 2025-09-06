@@ -1,50 +1,73 @@
-# 🌱 GreenBin Rewards - Smart Waste Management  
+# Welcome to your Lovable project
 
-<div align="center">
+## Project info
 
-![GreenBin Logo](https://via.placeholder.com/200x100/22c55e/ffffff?text=GreenBin)  
+**URL**: https://lovable.dev/projects/a79e0caf-9171-4c35-83ea-c328744690a3
 
-**Gamifying waste management with smart bins & rewards**  
+## How can I edit this code?
 
-[🚀 Live Demo](https://greenbin-rewards.lovable.app)
+There are several ways of editing your application.
 
+**Use Lovable**
 
-</div>
+Simply visit the [Lovable Project](https://lovable.dev/projects/a79e0caf-9171-4c35-83ea-c328744690a3) and start prompting.
 
----
+Changes made via Lovable will be committed automatically to this repo.
 
-## 🎯 About  
+**Use your preferred IDE**
 
-A smart waste management system using **IoT bins + gamification** to encourage eco-friendly habits. Users scan, dispose, earn points, and redeem rewards.  
+If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
 
----
+The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
 
-## ✨ Features  
+Follow these steps:
 
-- 🔐 Authentication (email, social login, roles)  
-- 📱 Smart bin scanning (QR + AI classification)  
-- 📊 Tracking & personal dashboards  
-- 🗺️ Bin locator & route optimization  
-- 🎁 Rewards & marketplace  
-- 📈 Analytics & environmental impact  
+```sh
+# Step 1: Clone the repository using the project's Git URL.
+git clone <YOUR_GIT_URL>
 
----
+# Step 2: Navigate to the project directory.
+cd <YOUR_PROJECT_NAME>
 
-## 🛠️ Tech Stack  
+# Step 3: Install the necessary dependencies.
+npm i
 
-**Frontend:** React, Tailwind, TypeScript, Chart.js, Maps  
-**Backend:** Node.js, Express, MongoDB/Postgres, JWT, Socket.io  
-**IoT:** Arduino/RPi, Sensors, LoRa/WiFi  
-**DevOps:** Docker, AWS/Heroku, GitHub Actions  
+# Step 4: Start the development server with auto-reloading and an instant preview.
+npm run dev
+```
 
----
+**Edit a file directly in GitHub**
 
-## 🚀 Quick Start  
+- Navigate to the desired file(s).
+- Click the "Edit" button (pencil icon) at the top right of the file view.
+- Make your changes and commit the changes.
 
-```bash
-# Clone & install
-git clone https://github.com/mahermendke060/Smart-Ecobin.git
-cd Smart-Ecobin && npm install && cd client && npm install
+**Use GitHub Codespaces**
 
-# Run
-npm run dev   # starts frontend + backend
+- Navigate to the main page of your repository.
+- Click on the "Code" button (green button) near the top right.
+- Select the "Codespaces" tab.
+- Click on "New codespace" to launch a new Codespace environment.
+- Edit files directly within the Codespace and commit and push your changes once you're done.
+
+## What technologies are used for this project?
+
+This project is built with:
+
+- Vite
+- TypeScript
+- React
+- shadcn-ui
+- Tailwind CSS
+
+## How can I deploy this project?
+
+Simply open [Lovable](https://lovable.dev/projects/a79e0caf-9171-4c35-83ea-c328744690a3) and click on Share -> Publish.
+
+## Can I connect a custom domain to my Lovable project?
+
+Yes, you can!
+
+To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+
+Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)

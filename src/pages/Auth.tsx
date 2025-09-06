@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Recycle, Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
+import { Recycle, Mail, Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { validatePassword, validateEmail, validateFullName } from '@/utils/validation';
+import { PasswordStrength } from '@/components/ui/password-strength';
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -18,97 +20,97 @@ const Auth = () => {
     password: '',
     fullName: ''
   });
+  const [validationErrors, setValidationErrors] = useState<{
+    email?: string[];
+    password?: string[];
+    fullName?: string[];
+  }>({});
   
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { login, register } = useAuth();
+
+  const validateForm = () => {
+    const errors: typeof validationErrors = {};
+
+    // Validate email
+    const emailValidation = validateEmail(formData.email);
+    if (!emailValidation.isValid) {
+      errors.email = emailValidation.errors;
+    }
+
+    // Validate password
+    const passwordValidation = validatePassword(formData.password);
+    if (!passwordValidation.isValid) {
+      errors.password = passwordValidation.errors;
+    }
+
+    // Validate full name for registration
+    if (!isLogin) {
+      const nameValidation = validateFullName(formData.fullName);
+      if (!nameValidation.isValid) {
+        errors.fullName = nameValidation.errors;
+      }
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Clear previous validation errors
+    setValidationErrors({});
+    
+    // Validate form
+    if (!validateForm()) {
+      return;
+    }
+
     setIsLoading(true);
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: formData.email,
-          password: formData.password,
-        });
-
-        if (error) {
-          toast({
-            title: 'Login Failed',
-            description: error.message,
-            variant: 'destructive',
-          });
-        } else {
-          toast({
-            title: 'Welcome back!',
-            description: 'Successfully logged in to EcoBin.',
-          });
-          navigate('/dashboard');
-        }
-      } else {
-        const { error } = await supabase.auth.signUp({
-          email: formData.email,
-          password: formData.password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/dashboard`,
-            data: {
-              full_name: formData.fullName,
-            }
-          }
-        });
-
-        if (error) {
-          toast({
-            title: 'Signup Failed',
-            description: error.message,
-            variant: 'destructive',
-          });
-        } else {
-          toast({
-            title: 'Account Created!',
-            description: 'Please check your email to confirm your account.',
-          });
-        }
-      }
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'An unexpected error occurred. Please try again.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSocialLogin = async (provider: 'google' | 'facebook') => {
-    setIsLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: `${window.location.origin}/dashboard`
-        }
-      });
-
-      if (error) {
+        await login(formData.email, formData.password);
         toast({
-          title: 'Social Login Failed',
-          description: error.message,
-          variant: 'destructive',
+          title: 'Welcome back!',
+          description: 'Successfully logged in to EcoBin.',
         });
+        navigate('/dashboard');
+      } else {
+        await register(formData.email, formData.password, formData.fullName);
+        toast({
+          title: 'Account Created!',
+          description: 'Welcome to Smart EcoBin! You are now logged in.',
+        });
+        navigate('/dashboard');
       }
-    } catch (error) {
+    } catch (error: any) {
+      let errorMessage = 'An unexpected error occurred. Please try again.';
+      
+      if (error.message) {
+        if (typeof error.message === 'string') {
+          errorMessage = error.message;
+        } else if (error.message.message) {
+          errorMessage = error.message.message;
+          if (error.message.errors && Array.isArray(error.message.errors)) {
+            errorMessage += '\n• ' + error.message.errors.join('\n• ');
+          }
+        }
+      }
+
       toast({
-        title: 'Error',
-        description: 'Failed to connect with social provider.',
+        title: isLogin ? 'Login Failed' : 'Signup Failed',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Social login removed for now - can be re-implemented with OAuth providers later
 
   return (
     <div className="min-h-screen bg-gradient-earth flex items-center justify-center p-4">
@@ -140,10 +142,22 @@ const Auth = () => {
                     placeholder="Enter your full name"
                     value={formData.fullName}
                     onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                    className="pl-10 border-eco-light/50 focus:border-eco"
+                    className={`pl-10 border-eco-light/50 focus:border-eco ${
+                      validationErrors.fullName ? 'border-red-500' : ''
+                    }`}
                     required
                   />
                 </div>
+                {validationErrors.fullName && (
+                  <div className="space-y-1">
+                    {validationErrors.fullName.map((error, index) => (
+                      <div key={index} className="flex items-center gap-2 text-sm text-red-600">
+                        <AlertCircle className="h-4 w-4" />
+                        <span>{error}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             
@@ -157,10 +171,22 @@ const Auth = () => {
                   placeholder="Enter your email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="pl-10 border-eco-light/50 focus:border-eco"
+                  className={`pl-10 border-eco-light/50 focus:border-eco ${
+                    validationErrors.email ? 'border-red-500' : ''
+                  }`}
                   required
                 />
               </div>
+              {validationErrors.email && (
+                <div className="space-y-1">
+                  {validationErrors.email.map((error, index) => (
+                    <div key={index} className="flex items-center gap-2 text-sm text-red-600">
+                      <AlertCircle className="h-4 w-4" />
+                      <span>{error}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             
             <div className="space-y-2">
@@ -173,7 +199,9 @@ const Auth = () => {
                   placeholder="Enter your password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="pl-10 pr-10 border-eco-light/50 focus:border-eco"
+                  className={`pl-10 pr-10 border-eco-light/50 focus:border-eco ${
+                    validationErrors.password ? 'border-red-500' : ''
+                  }`}
                   required
                 />
                 <Button
@@ -186,6 +214,21 @@ const Auth = () => {
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
+              
+              {!isLogin && formData.password && (
+                <PasswordStrength password={formData.password} className="mt-2" />
+              )}
+              
+              {validationErrors.password && (
+                <div className="space-y-1">
+                  {validationErrors.password.map((error, index) => (
+                    <div key={index} className="flex items-center gap-2 text-sm text-red-600">
+                      <AlertCircle className="h-4 w-4" />
+                      <span>{error}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             
             <Button

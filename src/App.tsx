@@ -12,6 +12,7 @@ import ScanDisposal from "./pages/ScanDisposal";
 import BinLocator from "./pages/BinLocator";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
+import Feedback from "./components/Feedback";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -29,6 +30,7 @@ const AppRoutes = () => {
         <Route path="/disposal" element={<ScanDisposal />} />
         <Route path="/locator" element={<BinLocator />} />
         <Route path="/analytics" element={<Analytics />} />
+        <Route path="/feedback" element={<Feedback />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
       
