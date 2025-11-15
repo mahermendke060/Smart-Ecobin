@@ -1,21 +1,23 @@
-import { useEffect, useState } from 'react';
-import { Search, MapPin, Navigation, Clock } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Search, MapPin, Navigation, Clock, RefreshCw, AlertTriangle, Crosshair, List } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
-import SimpleMap from '@/components/SimpleMap';
-import LocationSelector from '@/components/LocationSelector';
+import { Progress } from '@/components/ui/progress';
+import { locationApiService } from '@/services/locationApi';
 
 interface Bin {
-  id: string;
-  bin_id: string;
-  location: string;
-  status: string;
+  id: number;
+  name: string;
+  type: 'general' | 'recycling' | 'organic' | 'hazardous' | string;
   latitude: number;
   longitude: number;
+  address?: string;
+  capacity: number; // 0-100
+  status: 'available' | 'nearly_full' | 'full' | 'maintenance' | string;
+  last_updated?: string;
+  distance?: number; // computed client-side in km
 }
 
 interface UserLocation {
@@ -28,309 +30,543 @@ const BinLocator = () => {
   const [bins, setBins] = useState<Bin[]>([]);
   const [filteredBins, setFilteredBins] = useState<Bin[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [locationLoading, setLocationLoading] = useState(false);
-  const [showLocationSelector, setShowLocationSelector] = useState(false);
   const [locationConfirmed, setLocationConfirmed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [units, setUnits] = useState<'km' | 'miles'>('km');
+  const [radiusKm, setRadiusKm] = useState<number>(5);
+  const [binType, setBinType] = useState<string>('recycling');
+  const [detectedLocation, setDetectedLocation] = useState<{ latitude: number; longitude: number; address?: string } | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const refreshTimerRef = useRef<number | null>(null);
+  const ranOnceRef = useRef(false);
+  const [webhookStatus, setWebhookStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+  const [webhookBins, setWebhookBins] = useState<any[]>([]);
+  const [manualQuery, setManualQuery] = useState('');
+  const [manualSearching, setManualSearching] = useState(false);
 
+  // Step 1: Auto-request geolocation on first open, then ask user to confirm
   useEffect(() => {
-    fetchBins();
+    if (ranOnceRef.current) return;
+    ranOnceRef.current = true;
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by this browser');
+      return;
+    }
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        // Reverse geocode for a precise address (fallback to coordinates)
+        try {
+          const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`);
+          const data = await resp.json();
+          const addr = data?.address || {};
+          const addressParts = [
+            addr.road,
+            addr.neighbourhood || addr.suburb,
+            addr.city || addr.town || addr.village,
+            addr.state,
+            addr.postcode,
+            addr.country
+          ].filter(Boolean);
+          const address = addressParts.join(', ') || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+          const loc = { latitude, longitude, address };
+          setDetectedLocation(loc);
+        } catch {
+          const address = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+          const loc = { latitude, longitude, address };
+          setDetectedLocation(loc);
+        } finally {
+          setLocationLoading(false);
+        }
+      },
+      (geErr) => {
+        let msg = 'Unable to get current location';
+        if (geErr.code === geErr.PERMISSION_DENIED) msg = 'Location permission denied.';
+        if (geErr.code === geErr.POSITION_UNAVAILABLE) msg = 'Location unavailable.';
+        if (geErr.code === geErr.TIMEOUT) msg = 'Location request timed out.';
+        setError(msg);
+        setLocationLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+    );
   }, []);
 
   useEffect(() => {
     filterBins();
-  }, [searchTerm, bins]);
+  }, [searchTerm, bins, userLocation, locationConfirmed]);
 
-  const fetchBins = async () => {
+  const fetchNearbyBins = useCallback(async (lat: number, lng: number, radiusOverride?: number) => {
+    setLoading(true);
+    setError(null);
     try {
-      const { data, error } = await supabase
-        .from('bins')
-        .select('*')
-        .order('location');
+      const effectiveRadius = radiusOverride ?? radiusKm;
+      const data = await locationApiService.searchNearbyBins({
+        latitude: lat,
+        longitude: lng,
+        radius_km: effectiveRadius,
+        bin_type: binType
+      });
 
-      if (error) {
-        console.error('Error fetching bins:', error);
-        toast.error('Failed to fetch bins');
-      } else {
-        setBins(data || []);
-      }
-    } catch (error) {
-      console.error('Error fetching bins:', error);
-      toast.error('Failed to fetch bins');
+      // Compute distance client-side and sort
+      const withDistance = data.map((bin, i) => ({
+        id: Number((bin as any).id) || i,
+        name: (bin as any).name,
+        type: (bin as any).type || 'recycling',
+        latitude: (bin as any).latitude,
+        longitude: (bin as any).longitude,
+        address: (bin as any).address,
+        capacity: (bin as any).capacity ?? 0,
+        status: (bin as any).status || 'available',
+        last_updated: (bin as any).last_updated,
+        distance: haversineKm(lat, lng, (bin as any).latitude, (bin as any).longitude),
+      }));
+      withDistance.sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0));
+      setBins(withDistance);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Network error while fetching bins';
+      setError(message);
+      setBins([]);
     } finally {
       setLoading(false);
     }
+  }, [radiusKm, binType]);
+
+  const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   };
 
   const filterBins = () => {
-    if (!searchTerm) {
-      setFilteredBins(bins);
-    } else {
-      const filtered = bins.filter(bin =>
-        bin.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        bin.bin_id.toLowerCase().includes(searchTerm.toLowerCase())
+    let result = bins;
+
+    // Search filter
+    if (searchTerm) {
+      result = result.filter(bin =>
+        (bin.address || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (bin.name || '').toLowerCase().includes(searchTerm.toLowerCase())
       );
-      setFilteredBins(filtered);
     }
+
+    // Only show bins not in maintenance
+    result = result.filter(bin => bin.status !== 'maintenance');
+
+    // If location confirmed, restrict to selected radius and sort by distance
+    if (locationConfirmed && userLocation) {
+      result = result
+        .map(bin => ({
+          ...bin,
+          distance: haversineKm(userLocation.latitude, userLocation.longitude, bin.latitude, bin.longitude),
+        }))
+        .filter((bin: any) => bin.distance <= radiusKm)
+        .sort((a: any, b: any) => a.distance - b.distance) as any;
+    }
+
+    // If location not confirmed, do not show any default list below (map prompt handles UX)
+    if (!locationConfirmed) {
+      setFilteredBins([]);
+      return;
+    }
+
+    setFilteredBins(result as any);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'available':
-        return 'bg-eco text-white';
-      case 'full':
-        return 'bg-destructive text-destructive-foreground';
-      case 'maintenance':
-        return 'bg-muted text-muted-foreground';
-      default:
-        return 'bg-muted text-muted-foreground';
-    }
+  const getStatusColor = (bin: Bin) => {
+    if (bin.status === 'maintenance') return 'bg-gray-400 text-white';
+    const cap = Math.max(0, Math.min(100, bin.capacity ?? 0));
+    if (cap <= 50) return 'bg-green-500 text-white';
+    if (cap <= 75) return 'bg-yellow-500 text-black';
+    return 'bg-red-500 text-white';
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'available':
-        return '🟢';
-      case 'full':
-        return '🔴';
-      case 'maintenance':
-        return '🟡';
-      default:
-        return '⚪';
-    }
+  const getStatusText = (bin: Bin) => {
+    if (bin.status === 'maintenance') return 'Offline';
+    const cap = bin.capacity ?? 0;
+    return `${cap}% full`;
   };
 
   const openDirections = (bin: Bin) => {
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${bin.latitude},${bin.longitude}`;
+    const origin = userLocation ? `${userLocation.latitude},${userLocation.longitude}` : '';
+    const dest = `${bin.latitude},${bin.longitude}`;
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}`;
     window.open(url, '_blank');
   };
 
   const handleLocationRequest = () => {
-    if (navigator.geolocation) {
-      setLocationLoading(true);
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude
-          });
-          setLocationLoading(false);
-        },
-        (error) => {
-          console.error('Error getting location:', error);
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by this browser');
+      return;
+    }
+    setLocationLoading(true);
+    setError(null);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        try {
+          const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`);
+          const data = await resp.json();
+          const addr = data?.address || {};
+          const addressParts = [
+            addr.road,
+            addr.neighbourhood || addr.suburb,
+            addr.city || addr.town || addr.village,
+            addr.state,
+            addr.postcode,
+            addr.country
+          ].filter(Boolean);
+          const address = addressParts.join(', ') || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+          setDetectedLocation({ latitude, longitude, address });
+        } catch {
+          setDetectedLocation({ latitude, longitude, address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` });
+        } finally {
           setLocationLoading(false);
         }
-      );
+      },
+      (geErr) => {
+        let msg = 'Unable to get current location';
+        if (geErr.code === geErr.PERMISSION_DENIED) msg = 'Location permission denied. Use manual location entry.';
+        if (geErr.code === geErr.POSITION_UNAVAILABLE) msg = 'Location unavailable.';
+        if (geErr.code === geErr.TIMEOUT) msg = 'Location request timed out.';
+        setError(msg);
+        setLocationLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+    );
+  };
+
+  const startRealtime = (initial?: UserLocation) => {
+    // Track user movement
+    if (navigator.geolocation && watchIdRef.current === null) {
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          const loc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+          setUserLocation(loc);
+        },
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+      ) as unknown as number;
+    }
+    // Periodic bins refresh
+    if (refreshTimerRef.current === null) {
+      refreshTimerRef.current = window.setInterval(() => {
+        const loc = initial || userLocation;
+        if (loc) fetchNearbyBins(loc.latitude, loc.longitude, radiusKm);
+      }, 30000);
     }
   };
 
-  const handleLocationConfirm = (location: { latitude: number; longitude: number; address: string }) => {
-    setUserLocation({ 
-      latitude: location.latitude, 
-      longitude: location.longitude,
-      address: location.address 
-    });
-    setLocationConfirmed(true);
-    toast.success('Location confirmed!');
+  useEffect(() => {
+    return () => {
+      if (watchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+      if (refreshTimerRef.current !== null) {
+        window.clearInterval(refreshTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleManualSearch = async () => {
+    if (!manualQuery.trim()) return;
+    try {
+      setManualSearching(true);
+      setError(null);
+      const geo = await locationApiService.geocodeAddress(manualQuery.trim());
+      const address = geo.address || manualQuery.trim();
+      const loc = { latitude: geo.latitude, longitude: geo.longitude, address };
+      setDetectedLocation(loc);
+      await handleLocationConfirm(loc);
+    } catch (e: any) {
+      // Do not show any error; proceed with the raw text as address without coordinates
+      const rawAddress = manualQuery.trim();
+      const loc = { latitude: 0, longitude: 0, address: rawAddress };
+      setDetectedLocation(loc);
+      await handleLocationConfirm(loc);
+    } finally {
+      setManualSearching(false);
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-muted rounded w-1/3 mb-4"></div>
-          <div className="h-12 bg-muted rounded mb-6"></div>
-          <div className="grid gap-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-24 bg-muted rounded-lg"></div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const handleLocationConfirm = async (location: { latitude: number; longitude: number; address: string }) => {
+    // Set confirmation state and only start proximity features if we have real coordinates
+    setUserLocation({ latitude: location.latitude, longitude: location.longitude, address: location.address });
+    setLocationConfirmed(true);
+    const hasRealCoords = Number(location.latitude) !== 0 || Number(location.longitude) !== 0;
+    if (hasRealCoords) {
+      fetchNearbyBins(location.latitude, location.longitude, radiusKm);
+      startRealtime({ latitude: location.latitude, longitude: location.longitude });
+    }
+    // Send to n8n webhook after explicit user confirmation and wait for it
+    await postToWebhook(location.latitude, location.longitude, location.address);
+  };
+
+  const postToWebhook = async (latitude: number, longitude: number, address?: string) => {
+    try {
+      setWebhookStatus('sending');
+      setWebhookBins([]);
+      const res = await fetch('https://n8n.aiqure.in/webhook/5f4abb62-a6fa-447a-b98a-e4b6521d534f', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ latitude, longitude, address }),
+      });
+      if (!res.ok) throw new Error(`Webhook error: ${res.status}`);
+      // Try to parse bins coming back from webhook
+      let payload: any = null;
+      try {
+        payload = await res.json();
+      } catch {
+        payload = null;
+      }
+      if (payload) {
+        // Normalize to array
+        let items: any[] = [];
+        if (Array.isArray(payload)) items = payload;
+        else if (Array.isArray(payload?.bins)) items = payload.bins;
+
+        // If the response contains raw HTML blocks, keep them as-is in webhookBins
+        // Otherwise, keep previous mapping behavior
+        if (items.length > 0 && typeof items[0]?.html === 'string') {
+          setWebhookBins(items);
+        } else {
+          // Compute distance if coordinates present
+          if (userLocation && Array.isArray(items)) {
+            items = items.map((b: any, i: number) => ({
+              ...b,
+              id: Number(b?.id) || i,
+              distance: typeof b?.latitude === 'number' && typeof b?.longitude === 'number'
+                ? haversineKm(userLocation.latitude, userLocation.longitude, b.latitude, b.longitude)
+                : undefined,
+            }));
+          }
+          setWebhookBins(items);
+        }
+      } else {
+        setWebhookBins([]);
+      }
+      setWebhookStatus('success');
+    } catch (e) {
+      console.error(e);
+      setWebhookStatus('error');
+    }
+  };
+
+  const distanceLabel = (km?: number) => {
+    if (km == null) return '';
+    if (units === 'km') return `${km.toFixed(1)} km away`;
+    const miles = km * 0.621371;
+    return `${miles.toFixed(1)} mi away`;
+  };
+
+  const getDirectionsUrl = (item: any): string | null => {
+    const direct = item?.directionsUrl || item?.link || item?.url;
+    if (typeof direct === 'string' && direct.trim()) return direct;
+    if (typeof item?.latitude === 'number' && typeof item?.longitude === 'number') {
+      const origin = userLocation ? `${userLocation.latitude},${userLocation.longitude}` : '';
+      const dest = `${item.latitude},${item.longitude}`;
+      return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(dest)}`;
+    }
+    if (typeof item?.address === 'string' && item.address.trim()) {
+      // Fallback to a Google Maps search by address
+      const query = item.address.trim();
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+    }
+    return null;
+  };
+
+  const onHtmlItemClick = (item: any) => (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = e.target as HTMLElement | null;
+    const anchor = el ? (el.closest && el.closest('a')) as HTMLAnchorElement | null : null;
+    if (!anchor) return; // Not a link click, ignore
+    const rawHref = anchor.getAttribute('href') || '';
+    const invalid = !rawHref || rawHref === '#' || rawHref === 'undefined' || rawHref === 'null';
+    e.preventDefault();
+    const computed = invalid ? getDirectionsUrl(item) : rawHref;
+    if (computed) window.open(computed, '_blank');
+  };
+
+  useEffect(() => {
+    if (locationConfirmed && userLocation) {
+      fetchNearbyBins(userLocation.latitude, userLocation.longitude, radiusKm);
+    }
+  }, [radiusKm, binType, locationConfirmed, userLocation]);
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-eco mb-2">Bin Locator</h1>
-        <p className="text-muted-foreground text-lg">
-          Find the nearest available smart bins for your eco-friendly disposal
-        </p>
-      </div>
+      <h1 className="text-3xl font-bold text-eco mb-2">Bin Locator</h1>
 
-      {/* Search Bar - Only show after location is confirmed */}
-      {locationConfirmed && (
-        <Card className="border-eco-light/30">
-          <CardContent className="p-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by location or bin ID..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 border-eco-light/50 focus:border-eco"
-              />
+      {error && (
+        <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 p-3 rounded-md">
+          <AlertTriangle className="h-4 w-4" />
+          <span className="text-sm">{error}</span>
+        </div>
+      )}
+
+      {!locationConfirmed && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <MapPin className="h-5 w-5" />
+              Choose location
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="rounded-lg border p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-medium">Use current location</div>
+                  <div className="text-xs text-muted-foreground">We will detect your device location and ask you to confirm</div>
+                    {/* If detected, show inline confirmation */}
+              {detectedLocation && (
+                <div className="mt-3 text-left">
+                  <div className="text-sm text-gray-700 mb-2">
+                    Detected: {detectedLocation.address || `${detectedLocation.latitude.toFixed(6)}, ${detectedLocation.longitude.toFixed(6)}`}
+                  </div>
+                  <Button size="sm" onClick={() => handleLocationConfirm({
+                    latitude: detectedLocation.latitude,
+                    longitude: detectedLocation.longitude,
+                    address: detectedLocation.address || `${detectedLocation.latitude}, ${detectedLocation.longitude}`
+                  })}>
+                    Confirm this location
+                  </Button>
+                </div>
+              )}
+            </div>
+                <Button onClick={handleLocationRequest} disabled={locationLoading} className="sm:w-auto">
+                  <Crosshair className={`h-4 w-4 mr-2 ${locationLoading ? 'animate-spin' : ''}`} />
+                  {locationLoading ? 'Detecting…' : 'Detect Location'}
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-4">
+              <div className="mb-2 font-medium">Type an address</div>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Enter area, address, or city"
+                  value={manualQuery}
+                  onChange={(e) => setManualQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleManualSearch(); }}
+                />
+                <Button onClick={handleManualSearch} disabled={manualSearching || !manualQuery.trim()}>
+                  {manualSearching ? (
+                    <span className="inline-flex items-center"><RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Locating…</span>
+                  ) : (
+                    'Confirm'
+                  )}
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Location Selection / Map Section */}
-      <Card className="border-eco-light/30">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-eco">
-            <MapPin className="h-5 w-5" />
-            Find Smart Bins
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Locate the nearest smart bins and check their availability in real-time
-          </p>
-        </CardHeader>
-        <CardContent className="p-4">
-          {!locationConfirmed ? (
-            <div className="h-96 flex flex-col items-center justify-center text-center space-y-4">
-              <div className="text-6xl mb-4">📍</div>
-              <h3 className="text-xl font-semibold text-gray-800">Find Nearby Smart Bins</h3>
-              <p className="text-gray-600 max-w-md">
-                Share your location to discover the closest smart bins and check their real-time availability
-              </p>
-              <Button 
-                onClick={() => setShowLocationSelector(true)}
-                className="bg-teal-600 hover:bg-teal-700 text-white px-8 py-3"
-                size="lg"
+      {locationConfirmed && userLocation && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between text-base">
+              <span className="flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                Current location confirmed
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {webhookStatus === 'sending' && 'Processing…'}
+                {webhookStatus === 'success' && 'Location submitted'}
+                {webhookStatus === 'error' && 'Submission failed'}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="text-sm">
+              {userLocation.address || `${userLocation.latitude.toFixed(6)}, ${userLocation.longitude.toFixed(6)}`}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setLocationConfirmed(false);
+                  setManualQuery(userLocation.address || '');
+                  setWebhookBins([]);
+                  setWebhookStatus('idle');
+                }}
               >
-                <MapPin className="h-5 w-5 mr-2" />
-                Select Location
+                Change Location
               </Button>
             </div>
-          ) : (
-            <div className="h-96">
-              <SimpleMap 
-                bins={filteredBins} 
-                userLocation={userLocation}
-                onLocationRequest={handleLocationRequest}
-                locationLoading={locationLoading}
-              />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Recommended bins list */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between text-lg">
+            <span className="flex items-center gap-2">
+              <List className="h-4 w-4" />
+              Recommended bins
+            </span>
+            {webhookStatus === 'sending' && (
+              <span className="text-xs text-muted-foreground inline-flex items-center">
+                <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> Loading…
+              </span>
+            )}
+            {webhookStatus !== 'sending' && webhookBins.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {(typeof webhookBins[0]?.binCount === 'number' ? webhookBins[0].binCount : webhookBins.length)} found
+              </span>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {webhookStatus === 'sending' && (
+            <div className="text-sm text-muted-foreground inline-flex items-center">
+              <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> Loading recommendations…
+            </div>
+          )}
+          {webhookStatus !== 'sending' && webhookBins && webhookBins.length === 0 && (
+            <div className="text-sm text-muted-foreground">No recommendations yet.</div>
+          )}
+          {webhookBins && webhookBins.length > 0 && (
+            <div className="overflow-x-auto">
+              {webhookBins.map((item: any, idx: number) => (
+                typeof item?.html === 'string' ? (
+                  <div key={idx} onClick={onHtmlItemClick(item)} dangerouslySetInnerHTML={{ __html: item.html }} />
+                ) : (
+                  <div key={item.id ?? idx} className="flex items-center justify-between border rounded-md p-3">
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">
+                        {item.name || 'Bin'}{item.type ? ` · ${item.type}` : ''}
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {item.address || (typeof item.latitude === 'number' && typeof item.longitude === 'number' ? `${item.latitude.toFixed?.(6) || item.latitude}, ${item.longitude.toFixed?.(6) || item.longitude}` : '')}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 ml-3 shrink-0">
+                      <div className="text-xs text-right">
+                        {typeof item.distance === 'number' ? distanceLabel(item.distance) : ''}
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => { const url = getDirectionsUrl(item); if (url) window.open(url, '_blank'); }}>
+                        🗺️ Directions
+                      </Button>
+                    </div>
+                  </div>
+                )
+              ))}
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Bins List - Only show after location is confirmed */}
-      {locationConfirmed && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-eco">
-              Nearby Smart Bins ({filteredBins.length} found)
-            </h2>
-            <div className="flex gap-2 text-sm">
-              <span>🟢 Available</span>
-              <span>🔴 Full</span>
-              <span>🟡 Maintenance</span>
-            </div>
-          </div>
-
-          {userLocation && userLocation.address && (
-            <Card className="bg-blue-50 border-blue-200">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                  <div>
-                    <p className="font-medium text-blue-900">Your Location</p>
-                    <p className="text-sm text-blue-700">{userLocation.address}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {filteredBins.length === 0 ? (
-            <Card className="border-eco-light/30">
-              <CardContent className="p-8 text-center">
-                <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">
-                  {searchTerm ? 'No bins found matching your search.' : 'No smart bins found in your area.'}
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-4">
-              {(userLocation 
-                ? filteredBins
-                    .map(bin => ({
-                      ...bin,
-                      distance: Math.sqrt(
-                        Math.pow(bin.latitude - userLocation.latitude, 2) + 
-                        Math.pow(bin.longitude - userLocation.longitude, 2)
-                      ) * 111 // Rough conversion to km
-                    }))
-                    .sort((a, b) => a.distance - b.distance)
-                : filteredBins
-              ).map((bin) => (
-                <Card key={bin.id} className="border-eco-light/30 hover:shadow-eco transition-shadow">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="text-2xl">{getStatusIcon(bin.status)}</span>
-                          <div>
-                            <h3 className="font-semibold text-eco">{bin.bin_id}</h3>
-                            <p className="text-muted-foreground flex items-center gap-1">
-                              <MapPin className="h-3 w-3" />
-                              {bin.location}
-                            </p>
-                            {userLocation && 'distance' in bin && (
-                              <p className="text-xs text-blue-600">
-                                ~{(bin as any).distance.toFixed(1)} km away
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge className={getStatusColor(bin.status)}>
-                            {bin.status.charAt(0).toUpperCase() + bin.status.slice(1)}
-                          </Badge>
-                          {bin.status === 'available' && (
-                            <span className="text-sm text-eco flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              Available 24/7
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      
-                      <div className="flex flex-col gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openDirections(bin)}
-                          className="border-eco text-eco hover:bg-eco hover:text-white"
-                        >
-                          <Navigation className="h-3 w-3 mr-1" />
-                          Directions
-                        </Button>
-                        {bin.status === 'available' && (
-                          <Badge variant="secondary" className="text-xs text-center">
-                            Ready to use
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      <LocationSelector 
-        isOpen={showLocationSelector}
-        onClose={() => setShowLocationSelector(false)}
-        onLocationConfirm={handleLocationConfirm}
-      />
+      {/* Modal removed: confirmations now happen inline on the page */}
     </div>
   );
 };

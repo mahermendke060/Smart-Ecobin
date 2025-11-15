@@ -34,6 +34,33 @@ class ApiService {
     };
   }
 
+  async get(url: string): Promise<any> {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.getAuthHeaders(),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      const msg = err?.detail?.message || err?.detail || `GET ${url} failed (${response.status})`;
+      throw new Error(msg);
+    }
+    return response.json();
+  }
+
+  async post(url: string, body: any): Promise<any> {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      const msg = err?.detail?.message || err?.detail || `POST ${url} failed (${response.status})`;
+      throw new Error(msg);
+    }
+    return response.json();
+  }
+
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
     const response = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
@@ -91,6 +118,20 @@ class ApiService {
     } finally {
       localStorage.removeItem('access_token');
     }
+  }
+
+  async changePassword(current_password: string, new_password: string): Promise<{ message: string }> {
+    const response = await fetch(`${API_BASE_URL}/auth/change-password`, {
+      method: 'POST',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify({ current_password, new_password })
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      const msg = err?.detail?.message || err?.detail || 'Password change failed';
+      throw new Error(msg);
+    }
+    return response.json();
   }
 
   // Health check

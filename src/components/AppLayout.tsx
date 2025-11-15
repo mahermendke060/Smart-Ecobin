@@ -4,7 +4,6 @@ import {
   Home, 
   Scan, 
   MapPin, 
-  BarChart3, 
   Settings, 
   LogOut, 
   User, 
@@ -23,14 +22,16 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import VoiceAssistant from '@/components/VoiceAssistant';
+ 
 
 
 const AppLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -57,7 +58,6 @@ const AppLayout = () => {
     { icon: Home, label: 'Dashboard', path: '/dashboard' },
     { icon: Scan, label: 'Scan & Disposal', path: '/disposal' },
     { icon: MapPin, label: 'Bin Locator', path: '/locator' },
-    { icon: BarChart3, label: 'Analytics', path: '/analytics' },
     { icon: MessageSquare, label: 'Feedback', path: '/feedback' },
     { icon: Settings, label: 'Settings', path: '/settings' },
   ];
@@ -91,17 +91,6 @@ const AppLayout = () => {
               {!sidebarCollapsed && <h1 className="text-xl font-bold text-eco">EcoBin</h1>}
             </div>
             <div className="flex items-center gap-2">
-              {/* Desktop collapse/expand button */}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="hidden md:flex text-sidebar-foreground hover:bg-sidebar-accent"
-                title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              >
-                {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-              </Button>
-              
               {/* Mobile close button with arrow */}
               <Button
                 variant="ghost"
@@ -118,6 +107,26 @@ const AppLayout = () => {
           {/* Navigation */}
           <nav className="flex-1 px-4 py-6">
             <ul className="space-y-2">
+              {/* Collapse/Expand control inside sidebar list */}
+              <li>
+                <button
+                  type="button"
+                  onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                  className={`
+                    w-full flex items-center gap-3 rounded-lg transition-colors text-sidebar-foreground
+                    hover:bg-sidebar-accent hover:text-sidebar-accent-foreground
+                    ${sidebarCollapsed ? 'justify-center h-10 w-10 mx-auto p-0 bg-sidebar-accent/40' : 'px-3 py-2'}
+                  `}
+                  title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                >
+                  {sidebarCollapsed ? (
+                    <ChevronRight className="h-6 w-6" />
+                  ) : (
+                    <ChevronLeft className="h-5 w-5" />
+                  )}
+                  {!sidebarCollapsed && <span className="font-medium">Collapse</span>}
+                </button>
+              </li>
               {sidebarItems.map(({ icon: Icon, label, path }) => (
                 <li key={path}>
                   <Link
@@ -145,6 +154,17 @@ const AppLayout = () => {
               ))}
             </ul>
           </nav>
+          <div className="px-4 py-4 border-t border-sidebar-border">
+            <Button
+              variant="ghost"
+              className={`w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${sidebarCollapsed ? 'h-10 w-10 p-0 mx-auto justify-center' : ''}`}
+              onClick={handleLogout}
+              title="Log out"
+            >
+              <LogOut className="h-5 w-5" />
+              {!sidebarCollapsed && <span className="ml-3 font-medium">Log out</span>}
+            </Button>
+          </div>
         </div>
       </aside>
 
@@ -174,7 +194,7 @@ const AppLayout = () => {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56" align="end" forceMount>
-                <DropdownMenuItem onClick={() => navigate('/settings')}>
+                <DropdownMenuItem onClick={() => setProfileOpen(true)}>
                   <User className="mr-2 h-4 w-4" />
                   <span>Profile</span>
                 </DropdownMenuItem>
@@ -184,6 +204,34 @@ const AppLayout = () => {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+
+            <Sheet open={profileOpen} onOpenChange={setProfileOpen}>
+              <SheetContent side="right" className="sm:max-w-sm">
+                <SheetHeader>
+                  <SheetTitle>Account details</SheetTitle>
+                  <SheetDescription>Account details</SheetDescription>
+                </SheetHeader>
+                <div className="space-y-4 mt-2">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-10 w-10">
+                      <AvatarFallback className="bg-eco text-white">
+                        {user?.email?.[0]?.toUpperCase() || 'U'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <div className="font-medium">{user?.full_name || '—'}</div>
+                      <div className="text-sm text-muted-foreground">{user?.email}</div>
+                    </div>
+                  </div>
+                  <div className="text-sm space-y-1">
+                    <div><span className="text-muted-foreground">Active:</span> {user?.is_active ? 'Yes' : 'No'}</div>
+                    <div><span className="text-muted-foreground">Joined:</span> {user?.created_at ? new Date(user.created_at).toLocaleString() : '—'}</div>
+                  </div>
+                  <Button onClick={() => { setProfileOpen(false); navigate('/settings'); }} variant="outline" className="w-full">Manage account</Button>
+                  <Button onClick={handleLogout} className="w-full bg-eco hover:bg-eco-dark">Log out</Button>
+                </div>
+              </SheetContent>
+            </Sheet>
           </div>
         </header>
 
@@ -193,8 +241,7 @@ const AppLayout = () => {
         </main>
       </div>
 
-      {/* Voice Assistant - Available on all pages */}
-      <VoiceAssistant />
+      
     </div>
   );
 };

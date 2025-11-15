@@ -11,7 +11,7 @@ from models import User
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/location", tags=["location"])
+router = APIRouter()
 
 class LocationRequest(BaseModel):
     latitude: float = Field(..., ge=-90, le=90, description="Latitude coordinate")

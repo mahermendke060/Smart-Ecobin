@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
+import Intro from "./pages/Intro";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import ScanDisposal from "./pages/ScanDisposal";
@@ -22,8 +23,10 @@ const AppRoutes = () => {
   
   return (
     <Routes>
+      {/* Public routes */}
+      <Route path="/" element={<Intro />} />
+      <Route path="/intro" element={<Intro />} />
       <Route path="/auth" element={user ? <Navigate to="/dashboard" replace /> : <Auth />} />
-      <Route path="/" element={user ? <Navigate to="/dashboard" replace /> : <Navigate to="/auth" replace />} />
       
       <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
         <Route path="/dashboard" element={<Dashboard />} />

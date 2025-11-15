@@ -43,7 +43,7 @@ class LocationApiService {
 
   async searchNearbyBins(request: LocationRequest): Promise<BinLocation[]> {
     const response = await apiService.post(`${this.baseUrl}/search-nearby-bins`, request);
-    return response.data;
+    return response;
   }
 
   async searchBinsByParams(
@@ -60,17 +60,17 @@ class LocationApiService {
     });
 
     const response = await apiService.get(`${this.baseUrl}/search-bins?${params}`);
-    return response.data;
+    return response;
   }
 
   async geocodeAddress(address: string): Promise<GeocodeResponse> {
     const response = await apiService.post(`${this.baseUrl}/geocode`, { address });
-    return response.data;
+    return response;
   }
 
   async getBinTypes(): Promise<BinTypesResponse> {
     const response = await apiService.get(`${this.baseUrl}/bin-types`);
-    return response.data;
+    return response;
   }
 
   // Get user's current location using browser geolocation API

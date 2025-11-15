@@ -159,3 +159,44 @@ async def logout(request: Request, current_user: User = Depends(get_current_user
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Logout failed. Please try again."
         )
+
+# Change Password Schema (inline to avoid editing schemas.py now)
+from pydantic import BaseModel
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+@router.post("/change-password")
+async def change_password(
+    payload: ChangePasswordRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """Change password for authenticated user.
+    Validates current password, enforces strength checks, and updates hash.
+    """
+    # Authenticate
+    user_id = verify_token(credentials.credentials)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Validate current password
+    if not verify_password(payload.current_password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+
+    # Validate new password strength
+    password_valid, password_errors = validate_password_strength(payload.new_password)
+    if not password_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": "Password does not meet security requirements", "errors": password_errors}
+        )
+
+    # Update password
+    user.hashed_password = get_password_hash(payload.new_password)
+    db.add(user)
+    db.commit()
+
+    return {"message": "Password updated successfully"}

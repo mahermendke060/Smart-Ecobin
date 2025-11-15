@@ -133,7 +133,10 @@ const Auth = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
               <div className="space-y-2">
-                <Label htmlFor="fullName">Full Name</Label>
+                <Label htmlFor="fullName">
+                  Full Name <span className="text-red-500" aria-hidden="true">*</span>
+                  <span className="sr-only">required</span>
+                </Label>
                 <div className="relative">
                   <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -159,77 +162,96 @@ const Auth = () => {
                   </div>
                 )}
               </div>
+          )}
+          
+          <div className="space-y-2">
+            <Label htmlFor="email">
+              Email <span className="text-red-500" aria-hidden="true">*</span>
+              <span className="sr-only">required</span>
+            </Label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                id="email"
+                type="email"
+                placeholder="Enter your email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                className={`pl-10 border-eco-light/50 focus:border-eco ${
+                  validationErrors.email ? 'border-red-500' : ''
+                }`}
+                required
+              />
+            </div>
+            {validationErrors.email && (
+              <div className="space-y-1">
+                {validationErrors.email.map((error, index) => (
+                  <div key={index} className="flex items-center gap-2 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>{error}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="password">
+              Password <span className="text-red-500" aria-hidden="true">*</span>
+              <span className="sr-only">required</span>
+            </Label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Enter your password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                className={`pl-10 pr-10 border-eco-light/50 focus:border-eco ${
+                  validationErrors.password ? 'border-red-500' : ''
+                }`}
+                required
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="absolute right-1 top-1 h-8 w-8 p-0"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </div>
+            
+            {!isLogin && formData.password && (
+              <PasswordStrength password={formData.password} className="mt-2" />
             )}
             
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter your email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className={`pl-10 border-eco-light/50 focus:border-eco ${
-                    validationErrors.email ? 'border-red-500' : ''
-                  }`}
-                  required
-                />
+            {validationErrors.password && (
+              <div className="space-y-1">
+                {validationErrors.password.map((error, index) => (
+                  <div key={index} className="flex items-center gap-2 text-sm text-red-600">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>{error}</span>
+                  </div>
+                ))}
               </div>
-              {validationErrors.email && (
-                <div className="space-y-1">
-                  {validationErrors.email.map((error, index) => (
-                    <div key={index} className="flex items-center gap-2 text-sm text-red-600">
-                      <AlertCircle className="h-4 w-4" />
-                      <span>{error}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
+          </div>
             
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter your password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className={`pl-10 pr-10 border-eco-light/50 focus:border-eco ${
-                    validationErrors.password ? 'border-red-500' : ''
-                  }`}
-                  required
-                />
+            {isLogin && (
+              <div className="flex justify-end">
                 <Button
                   type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-1 top-1 h-8 w-8 p-0"
-                  onClick={() => setShowPassword(!showPassword)}
+                  variant="link"
+                  className="p-0 text-eco hover:text-eco-dark"
+                  onClick={(e) => e.preventDefault()}
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  Forgot password?
                 </Button>
               </div>
-              
-              {!isLogin && formData.password && (
-                <PasswordStrength password={formData.password} className="mt-2" />
-              )}
-              
-              {validationErrors.password && (
-                <div className="space-y-1">
-                  {validationErrors.password.map((error, index) => (
-                    <div key={index} className="flex items-center gap-2 text-sm text-red-600">
-                      <AlertCircle className="h-4 w-4" />
-                      <span>{error}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
             
             <Button
               type="submit"

@@ -15,6 +15,7 @@ export const CameraCapture = ({ onImageCaptured, onClose }: CameraCaptureProps) 
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const N8N_WEBHOOK_URL = 'https://n8n.aiqure.in/webhook/5f4abb62-a6fa-447a-b98a-e4b6521d534f';
 
   const analyzeImage = async (imageData: string) => {
     setIsAnalyzing(true);
@@ -38,6 +39,19 @@ export const CameraCapture = ({ onImageCaptured, onClose }: CameraCaptureProps) 
       return null;
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  const sendToWebhook = async (imageData: string) => {
+    try {
+      await fetch(N8N_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: imageData })
+      });
+    } catch (err) {
+      console.error('Failed to send image to n8n webhook:', err);
+      // Non-blocking: do not surface toast as this is auxiliary to existing flow
     }
   };
 
@@ -69,6 +83,8 @@ export const CameraCapture = ({ onImageCaptured, onClose }: CameraCaptureProps) 
     reader.onload = async (e) => {
       const imageData = e.target?.result as string;
       setCapturedImage(imageData);
+      // Send image to n8n webhook (fire-and-forget)
+      sendToWebhook(imageData);
       
       // Analyze the image
       const analysisResult = await analyzeImage(imageData);

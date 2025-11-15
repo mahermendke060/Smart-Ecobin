@@ -1,35 +1,15 @@
-import { useState, useEffect } from 'react';
-import { User, Save, Bell, Eye, EyeOff } from 'lucide-react';
+import { useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
-
-interface Profile {
-  full_name: string | null;
-  email: string | null;
-  avatar_url: string | null;
-}
+import { apiService } from '@/services/api';
 
 const Settings = () => {
-  const { user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [profile, setProfile] = useState<Profile>({
-    full_name: '',
-    email: '',
-    avatar_url: ''
-  });
-  const [preferences, setPreferences] = useState({
-    notifications: true,
-    weeklyReports: false,
-    shareStats: true
-  });
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
@@ -41,63 +21,7 @@ const Settings = () => {
     confirm: false
   });
 
-  useEffect(() => {
-    if (user) {
-      loadProfile();
-    }
-  }, [user]);
-
-  const loadProfile = async () => {
-    try {
-      const { data } = await supabase
-        .from('profiles')
-        .select('full_name, email, avatar_url')
-        .eq('user_id', user?.id)
-        .single();
-
-      if (data) {
-        setProfile({
-          full_name: data.full_name || '',
-          email: data.email || user?.email || '',
-          avatar_url: data.avatar_url || ''
-        });
-      }
-    } catch (error) {
-      console.error('Error loading profile:', error);
-    }
-  };
-
-  const updateProfile = async () => {
-    if (!user) return;
-
-    setLoading(true);
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: profile.full_name,
-          email: profile.email
-        })
-        .eq('user_id', user.id);
-
-      if (error) {
-        throw error;
-      }
-
-      toast({
-        title: 'Profile Updated',
-        description: 'Your profile has been saved successfully.',
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to update profile',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+  
 
   const updatePassword = async () => {
     if (!passwordData.newPassword || !passwordData.confirmPassword) {
@@ -120,13 +44,7 @@ const Settings = () => {
 
     setLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({
-        password: passwordData.newPassword
-      });
-
-      if (error) {
-        throw error;
-      }
+      await apiService.changePassword(passwordData.currentPassword, passwordData.newPassword);
 
       toast({
         title: 'Password Updated',
@@ -166,53 +84,6 @@ const Settings = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Profile Settings */}
-        <Card className="border-eco-light/30">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-eco">
-              <User className="h-5 w-5" />
-              Profile Information
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="fullName">Full Name</Label>
-              <Input
-                id="fullName"
-                value={profile.full_name || ''}
-                onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
-                placeholder="Enter your full name"
-                className="border-eco-light/50 focus:border-eco"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={profile.email || ''}
-                onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                placeholder="Enter your email"
-                className="border-eco-light/50 focus:border-eco"
-                disabled // Email changes typically require verification
-              />
-              <p className="text-xs text-muted-foreground">
-                Contact support to change your email address
-              </p>
-            </div>
-
-            <Button
-              onClick={updateProfile}
-              disabled={loading}
-              className="w-full bg-eco hover:bg-eco-dark"
-            >
-              <Save className="h-4 w-4 mr-2" />
-              Save Profile
-            </Button>
-          </CardContent>
-        </Card>
-
         {/* Password Settings */}
         <Card className="border-eco-light/30">
           <CardHeader>
@@ -298,86 +169,7 @@ const Settings = () => {
           </CardContent>
         </Card>
       </div>
-
-      {/* App Preferences */}
-      <Card className="border-eco-light/30">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-eco">
-            <Bell className="h-5 w-5" />
-            App Preferences
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label className="text-base">Push Notifications</Label>
-              <p className="text-sm text-muted-foreground">
-                Receive notifications about nearby bins and rewards
-              </p>
-            </div>
-            <Switch
-              checked={preferences.notifications}
-              onCheckedChange={(checked) => 
-                setPreferences({ ...preferences, notifications: checked })
-              }
-            />
-          </div>
-
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label className="text-base">Weekly Reports</Label>
-              <p className="text-sm text-muted-foreground">
-                Get weekly summaries of your eco impact
-              </p>
-            </div>
-            <Switch
-              checked={preferences.weeklyReports}
-              onCheckedChange={(checked) => 
-                setPreferences({ ...preferences, weeklyReports: checked })
-              }
-            />
-          </div>
-
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label className="text-base">Share Statistics</Label>
-              <p className="text-sm text-muted-foreground">
-                Allow your stats to be included in community leaderboards
-              </p>
-            </div>
-            <Switch
-              checked={preferences.shareStats}
-              onCheckedChange={(checked) => 
-                setPreferences({ ...preferences, shareStats: checked })
-              }
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Account Actions */}
-      <Card className="border-eco-light/30">
-        <CardHeader>
-          <CardTitle className="text-eco">Account Actions</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Button variant="outline" className="border-eco text-eco hover:bg-eco hover:text-white">
-              Export Data
-            </Button>
-            <Button variant="outline" className="border-destructive text-destructive hover:bg-destructive hover:text-white">
-              Delete Account
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Account deletion is permanent and cannot be undone. All your data will be removed.
-          </p>
-        </CardContent>
-      </Card>
+      {/* End grid */}
     </div>
   );
 };
