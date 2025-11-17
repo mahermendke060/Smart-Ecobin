@@ -6,7 +6,16 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 
 interface CameraCaptureProps {
-  onImageCaptured: (imageData: string, isGarbage: boolean, confidence: number, pointsEarned: number) => void;
+  onImageCaptured: (
+    imageData: string,
+    result: {
+      isGarbage: boolean;
+      confidence: number;
+      wasteType: string;
+      description: string;
+      pointsEarned: number;
+    }
+  ) => void;
   onClose: () => void;
 }
 
@@ -15,13 +24,45 @@ export const CameraCapture = ({ onImageCaptured, onClose }: CameraCaptureProps) 
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
-  const N8N_WEBHOOK_URL = 'https://n8n.aiqure.in/webhook/5f4abb62-a6fa-447a-b98a-e4b6521d534f';
+
+  const dataUrlToBlob = (dataUrl: string) => {
+    const arr = dataUrl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) u8arr[n] = bstr.charCodeAt(n);
+    return new Blob([u8arr], { type: mime });
+  };
+
+  const uploadToStorage = async (imageData: string): Promise<string | null> => {
+    try {
+      const blob = dataUrlToBlob(imageData);
+      const fileName = `detect/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+      const { error: uploadErr } = await supabase.storage
+        .from('detection-images')
+        .upload(fileName, blob, { contentType: blob.type, upsert: true });
+      if (uploadErr) {
+        console.warn('Storage upload failed, falling back to data URL:', uploadErr);
+        return null;
+      }
+      const { data } = supabase.storage.from('detection-images').getPublicUrl(fileName);
+      return data?.publicUrl || null;
+    } catch (e) {
+      console.warn('Storage upload exception, falling back to data URL:', e);
+      return null;
+    }
+  };
 
   const analyzeImage = async (imageData: string) => {
     setIsAnalyzing(true);
     try {
+      // Prefer public URL to avoid large data URLs to the Edge Function
+      const publicUrl = await uploadToStorage(imageData);
+      const payloadImage = publicUrl || imageData;
+
       const { data, error } = await supabase.functions.invoke('detect-garbage', {
-        body: { image: imageData }
+        body: { image: payloadImage }
       });
 
       if (error) {
@@ -29,29 +70,22 @@ export const CameraCapture = ({ onImageCaptured, onClose }: CameraCaptureProps) 
       }
 
       return data;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error analyzing image:', error);
+      // Try to surface more helpful error details from Edge Function
+      const message =
+        error?.context?.body?.details ||
+        error?.context?.body?.error ||
+        error?.message ||
+        'Failed to analyze the image. Please try again.';
       toast({
         title: 'Analysis Error',
-        description: 'Failed to analyze the image. Please try again.',
+        description: String(message).slice(0, 300),
         variant: 'destructive',
       });
       return null;
     } finally {
       setIsAnalyzing(false);
-    }
-  };
-
-  const sendToWebhook = async (imageData: string) => {
-    try {
-      await fetch(N8N_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: imageData })
-      });
-    } catch (err) {
-      console.error('Failed to send image to n8n webhook:', err);
-      // Non-blocking: do not surface toast as this is auxiliary to existing flow
     }
   };
 
@@ -83,19 +117,18 @@ export const CameraCapture = ({ onImageCaptured, onClose }: CameraCaptureProps) 
     reader.onload = async (e) => {
       const imageData = e.target?.result as string;
       setCapturedImage(imageData);
-      // Send image to n8n webhook (fire-and-forget)
-      sendToWebhook(imageData);
       
       // Analyze the image
       const analysisResult = await analyzeImage(imageData);
       
       if (analysisResult) {
-        onImageCaptured(
-          imageData, 
-          analysisResult.isGarbage, 
-          analysisResult.confidence, 
-          analysisResult.pointsEarned
-        );
+        onImageCaptured(imageData, {
+          isGarbage: analysisResult.isGarbage,
+          confidence: analysisResult.confidence,
+          wasteType: analysisResult.wasteType,
+          description: analysisResult.description,
+          pointsEarned: analysisResult.pointsEarned,
+        });
       }
     };
     reader.readAsDataURL(file);

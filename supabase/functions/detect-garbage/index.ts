@@ -11,6 +11,7 @@ declare const Deno: {
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
@@ -47,12 +48,9 @@ serve(async (req: Request): Promise<Response> => {
       req.headers.get('referer') ||
       'http://localhost:5173';
 
-    // Try OpenRouter with supported models (fallbacks if a model is unavailable)
+    // Pin to a low-cost/free model to avoid 402 credit errors
     const models = [
-      'google/gemini-1.5-flash',
-      'google/gemini-1.5-flash-latest',
-      'openai/gpt-4o-mini',
-      'anthropic/claude-3.5-haiku'
+      'google/gemini-1.5-flash'
     ];
 
     let response: Response | null = null;
@@ -108,8 +106,8 @@ serve(async (req: Request): Promise<Response> => {
             ]
           }
         ],
-        max_tokens: 500,
-        temperature: 0.3
+        max_tokens: 120,
+        temperature: 0.2
         })
       });
 
@@ -119,14 +117,26 @@ serve(async (req: Request): Promise<Response> => {
       lastError = `status=${response.status} body=${errorText}`;
       console.error('OpenRouter API error:', model, lastError);
 
-      // Try next model only for 404/400 style model errors; otherwise stop
-      if (response.status !== 404 && response.status !== 400) {
+      // Try next model for common client-side issues like missing model (404),
+      // bad request (400), or insufficient credits (402). Break for other statuses.
+      if (![400, 402, 404].includes(response.status)) {
         break;
       }
     }
 
     if (!response || !response.ok) {
-      throw new Error(`OpenRouter API error: ${lastError || 'unknown error'}`);
+      const status = response?.status || 500;
+      const bodyText = lastError || 'unknown error';
+      return new Response(
+        JSON.stringify({
+          error: 'OpenRouter request failed',
+          details: bodyText,
+        }),
+        {
+          status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
     }
 
     const aiResponse = await response.json();

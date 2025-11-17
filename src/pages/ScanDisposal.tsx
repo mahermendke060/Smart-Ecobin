@@ -3,6 +3,9 @@ import { Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CameraCapture } from '@/components/CameraCapture';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 const ScanDisposal = () => {
   const [showCamera, setShowCamera] = useState(false);
@@ -14,17 +17,126 @@ const ScanDisposal = () => {
     pointsEarned: number;
     imageData: string;
   } | null>(null);
+  const { toast } = useToast();
+  const { user } = useAuth();
 
-  const handleImageCaptured = (imageData: string, isGarbage: boolean, confidence: number, pointsEarned: number) => {
+  const isValidUuid = (value: string | null | undefined) => {
+    if (!value) return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  };
+
+  const ensureBin = async (): Promise<string | null> => {
+    // Try to reuse any existing bin
+    const { data: bins, error: binsError } = await supabase
+      .from('bins')
+      .select('id, bin_id, location, status')
+      .limit(1);
+
+    if (binsError) {
+      console.error('Failed to fetch bins', binsError);
+      return null;
+    }
+
+    if (bins && bins.length > 0) {
+      const existingId = (bins[0] as any)?.id as string | undefined;
+      if (isValidUuid(existingId)) {
+        return existingId as string;
+      }
+      // If existing id is not a UUID (legacy rows), fall through to create a new UUID bin
+    }
+
+    // Create a default bin for AI detection flow
+    const { data: newBin, error: createError } = await supabase
+      .from('bins')
+      .insert({
+        bin_id: 'AI-DETECTION',
+        location: 'AI Detection',
+        status: 'virtual'
+      })
+      .select('*')
+      .single();
+
+    if (createError) {
+      console.error('Failed to create default bin', createError);
+      return null;
+    }
+
+    return (newBin as any)?.id ?? null;
+  };
+
+  const persistReward = async (wasteType: string, points: number) => {
+    if (!user) {
+      toast({ title: 'Not signed in', description: 'Please log in to earn points.', variant: 'destructive' });
+      return;
+    }
+
+    const binId = await ensureBin();
+    if (!binId) {
+      toast({ title: 'Setup error', description: 'No bin available to record disposal.', variant: 'destructive' });
+      return;
+    }
+
+    // Insert disposal record
+    const { error: insertError } = await supabase
+      .from('disposals')
+      .insert({
+        user_id: user.id,
+        bin_id: binId,
+        waste_type: wasteType,
+        points_earned: points
+      });
+
+    if (insertError) {
+      console.error('Failed to record disposal', insertError);
+      toast({ title: 'Save error', description: 'Could not record your disposal.', variant: 'destructive' });
+      return;
+    }
+
+    // Update profile points and totals
+    const { data: profile, error: profileErr } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+
+    if (profileErr) {
+      console.error('Failed to load profile', profileErr);
+      return;
+    }
+
+    const { error: updateErr } = await supabase
+      .from('profiles')
+      .update({
+        points: (profile?.points || 0) + (points || 0),
+        total_disposals: (profile?.total_disposals || 0) + 1,
+      })
+      .eq('user_id', user.id);
+
+    if (updateErr) {
+      console.error('Failed to update profile points', updateErr);
+      return;
+    }
+
+    toast({ title: 'Points awarded!', description: `You earned +${points} eco points.` });
+  };
+
+  const handleImageCaptured = async (
+    imageData: string,
+    result: { isGarbage: boolean; confidence: number; wasteType: string; description: string; pointsEarned: number }
+  ) => {
     setAiDetectionResult({
-      isGarbage,
-      confidence,
-      wasteType: 'ai-detected',
-      description: `AI detected ${isGarbage ? 'recyclable waste' : 'non-recyclable item'}`,
-      pointsEarned,
-      imageData
+      isGarbage: result.isGarbage,
+      confidence: result.confidence,
+      wasteType: result.wasteType,
+      description: result.description,
+      pointsEarned: result.pointsEarned,
+      imageData,
     });
     setShowCamera(false);
+
+    if (result.isGarbage && result.pointsEarned > 0) {
+      await persistReward(result.wasteType || 'recyclable', result.pointsEarned);
+    }
   };
 
   return (
