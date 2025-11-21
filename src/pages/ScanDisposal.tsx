@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CameraCapture } from '@/components/CameraCapture';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { apiService } from '@/services/api';
 
 const ScanDisposal = () => {
   const [showCamera, setShowCamera] = useState(false);
@@ -20,109 +20,28 @@ const ScanDisposal = () => {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  const isValidUuid = (value: string | null | undefined) => {
-    if (!value) return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-  };
-
-  const ensureBin = async (): Promise<string | null> => {
-    // Try to reuse any existing bin
-    const { data: bins, error: binsError } = await supabase
-      .from('bins')
-      .select('id, bin_id, location, status')
-      .limit(1);
-
-    if (binsError) {
-      console.error('Failed to fetch bins', binsError);
-      return null;
-    }
-
-    if (bins && bins.length > 0) {
-      const existingId = (bins[0] as any)?.id as string | undefined;
-      if (isValidUuid(existingId)) {
-        return existingId as string;
-      }
-      // If existing id is not a UUID (legacy rows), fall through to create a new UUID bin
-    }
-
-    // Create a default bin for AI detection flow
-    const { data: newBin, error: createError } = await supabase
-      .from('bins')
-      .insert({
-        bin_id: 'AI-DETECTION',
-        location: 'AI Detection',
-        status: 'virtual'
-      })
-      .select('*')
-      .single();
-
-    if (createError) {
-      console.error('Failed to create default bin', createError);
-      return null;
-    }
-
-    return (newBin as any)?.id ?? null;
-  };
+  // For now, no bin linking is required from frontend for AI-only detections.
 
   const persistReward = async (wasteType: string, points: number) => {
-    if (!user) {
+    if (!user?.id) {
       toast({ title: 'Not signed in', description: 'Please log in to earn points.', variant: 'destructive' });
       return;
     }
 
-    const binId = await ensureBin();
-    if (!binId) {
-      toast({ title: 'Setup error', description: 'No bin available to record disposal.', variant: 'destructive' });
-      return;
+    try {
+      await apiService.ensureProfile();
+      await apiService.createDisposal({ waste_type: wasteType, points_earned: points, bin_id: null });
+      await apiService.addPoints(points, true);
+      toast({ title: 'Points awarded!', description: `You earned +${points} eco points.` });
+    } catch (e: any) {
+      console.error('Failed to persist reward', e);
+      toast({ title: 'Error', description: e?.message || 'Could not save your points.', variant: 'destructive' });
     }
-
-    // Insert disposal record
-    const { error: insertError } = await supabase
-      .from('disposals')
-      .insert({
-        user_id: user.id,
-        bin_id: binId,
-        waste_type: wasteType,
-        points_earned: points
-      });
-
-    if (insertError) {
-      console.error('Failed to record disposal', insertError);
-      toast({ title: 'Save error', description: 'Could not record your disposal.', variant: 'destructive' });
-      return;
-    }
-
-    // Update profile points and totals
-    const { data: profile, error: profileErr } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .single();
-
-    if (profileErr) {
-      console.error('Failed to load profile', profileErr);
-      return;
-    }
-
-    const { error: updateErr } = await supabase
-      .from('profiles')
-      .update({
-        points: (profile?.points || 0) + (points || 0),
-        total_disposals: (profile?.total_disposals || 0) + 1,
-      })
-      .eq('user_id', user.id);
-
-    if (updateErr) {
-      console.error('Failed to update profile points', updateErr);
-      return;
-    }
-
-    toast({ title: 'Points awarded!', description: `You earned +${points} eco points.` });
   };
 
   const handleImageCaptured = async (
     imageData: string,
-    result: { isGarbage: boolean; confidence: number; wasteType: string; description: string; pointsEarned: number }
+    result: { isGarbage: boolean; confidence: number; wasteType: string; description: string; pointsEarned: number; itemName: string }
   ) => {
     setAiDetectionResult({
       isGarbage: result.isGarbage,
@@ -135,22 +54,18 @@ const ScanDisposal = () => {
     setShowCamera(false);
 
     if (result.isGarbage && result.pointsEarned > 0) {
-      await persistReward(result.wasteType || 'recyclable', result.pointsEarned);
+      // Save the detected item name in disposal.waste_type so Recent Activity shows the item
+      await persistReward(result.itemName || result.wasteType || 'recyclable', result.pointsEarned);
+      // No auto-reload; let the user stay on the page. The dashboard will reflect updates on next visit.
     }
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-eco mb-2">Scan & Disposal</h1>
-        <p className="text-muted-foreground text-lg">
-          Use AI to detect and verify your eco-friendly disposal
-        </p>
-      </div>
+    <div className="min-h-[calc(100vh-8rem)] bg-gradient-to-br from-emerald-50 via-green-50 to-teal-50 rounded-xl space-y-6">
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* AI Detection Only */}
-        <Card className="border-eco-light/30">
+      <div className="px-4 md:px-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* AI Detection */}
+        <Card className="border-eco-light/30 rounded-3xl shadow-xl">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-eco">
               <Camera className="h-5 w-5" />
@@ -158,46 +73,87 @@ const ScanDisposal = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* AI Camera Detection Section */}
+            {/* AI Camera Detection Section (Hero) */}
             <div className="text-center">
-              <div className="bg-gradient-reward p-6 rounded-lg">
+              <div className="bg-gradient-to-br from-emerald-400 via-teal-500 to-emerald-500 p-8 rounded-2xl text-white shadow relative overflow-hidden">
                 <Camera className="h-16 w-16 text-white mx-auto mb-3" />
-                <p className="text-white mb-3">
-                  Use AI to detect and verify your waste
-                </p>
-                <Button 
-                  onClick={() => setShowCamera(true)}
-                  className="bg-white text-eco hover:bg-white/90"
-                  size="sm"
-                >
-                  <Camera className="h-4 w-4 mr-2" />
-                  AI Waste Detection
-                </Button>
+                <h3 className="text-2xl font-semibold mb-1">Use AI to detect and verify your waste</h3>
+                <p className="text-white/90 mb-4">Take a photo or upload an image of your recyclable item</p>
+                <div className="flex items-center justify-center">
+                  <Button onClick={() => setShowCamera(true)} className="bg-white text-emerald-700 hover:bg-white/90"><Camera className="h-4 w-4 mr-2"/>AI Waste Detection</Button>
+                </div>
               </div>
-              
+
+              {/* Result card */}
               {aiDetectionResult && (
-                <div className={`p-4 rounded-lg mt-4 ${aiDetectionResult.isGarbage ? 'bg-eco/10' : 'bg-destructive/10'}`}>
-                  <div className="flex items-center justify-center gap-2 mb-2">
-                    <span className="text-lg">
-                      {aiDetectionResult.isGarbage ? '✅' : '❌'}
-                    </span>
-                    <p className={`font-semibold ${aiDetectionResult.isGarbage ? 'text-eco' : 'text-destructive'}`}>
-                      {aiDetectionResult.isGarbage ? 'Recyclable Waste Detected!' : 'Not Recyclable'}
-                    </p>
+                <div className="bg-white rounded-2xl border-2 border-emerald-200 mt-4 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-lg font-semibold text-emerald-700">{aiDetectionResult.isGarbage ? 'Successfully detected!' : 'No recyclable item'}</p>
+                      <p className="text-sm text-gray-600">{aiDetectionResult.description}</p>
+                    </div>
+                    <div className={`text-right ${aiDetectionResult.isGarbage ? 'text-emerald-600' : 'text-gray-500'}`}>
+                      <div className="text-sm">Confidence</div>
+                      <div className="text-2xl font-bold">{Math.round(aiDetectionResult.confidence * 100)}%</div>
+                    </div>
                   </div>
-                  <p className="text-sm text-muted-foreground mb-2">
-                    {aiDetectionResult.description}
-                  </p>
-                  <p className="text-sm">
-                    Confidence: {Math.round(aiDetectionResult.confidence * 100)}%
-                  </p>
                   {aiDetectionResult.isGarbage && (
-                    <p className="text-eco font-semibold mt-2">
-                      +{aiDetectionResult.pointsEarned} eco points
-                    </p>
+                    <div className="mt-3 flex items-center justify-between">
+                      <div className="text-emerald-700 font-semibold">Category: Recyclable</div>
+                      <div className="text-emerald-700 font-bold text-lg">+{aiDetectionResult.pointsEarned} points</div>
+                    </div>
                   )}
                 </div>
               )}
+            </div>
+
+            {/* Features row */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
+              <div className="rounded-xl p-4 bg-emerald-50 border-2 border-emerald-200 text-emerald-800 text-sm font-medium">⚡ Instant Results</div>
+              <div className="rounded-xl p-4 bg-blue-50 border-2 border-blue-200 text-blue-800 text-sm font-medium">⭐ 95% Accurate</div>
+              <div className="rounded-xl p-4 bg-purple-50 border-2 border-purple-200 text-purple-800 text-sm font-medium">🏅 Earn Points</div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Points Criteria beside detection */}
+        <Card className="border-eco-light/30 rounded-3xl shadow-xl">
+          <CardHeader>
+            <CardTitle className="text-sm font-medium text-eco">Points Criteria</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="p-3 rounded-xl bg-emerald-50 border-2 border-emerald-200 text-emerald-800 text-sm">Points are based on AI confidence of a recyclable item.</div>
+            <div className="p-4 rounded-xl bg-yellow-50 border-2 border-yellow-200 flex items-center justify-between">
+              <div>
+                <div className="font-semibold text-yellow-700">&lt;60%</div>
+                <div className="text-sm text-yellow-800">5 points awarded</div>
+              </div>
+              <div className="font-bold text-yellow-700">+5</div>
+            </div>
+            <div className="p-4 rounded-xl bg-blue-50 border-2 border-blue-200 flex items-center justify-between">
+              <div>
+                <div className="font-semibold text-blue-700">60–84%</div>
+                <div className="text-sm text-blue-800">10 points awarded</div>
+              </div>
+              <div className="font-bold text-blue-700">+10</div>
+            </div>
+            <div className="p-4 rounded-xl bg-green-50 border-2 border-green-200 flex items-center justify-between">
+              <div>
+                <div className="font-semibold text-green-700">85–94%</div>
+                <div className="text-sm text-green-800">15 points awarded</div>
+              </div>
+              <div className="font-bold text-green-700">+15</div>
+            </div>
+            <div className="p-4 rounded-xl bg-purple-50 border-2 border-purple-200 flex items-center justify-between">
+              <div>
+                <div className="font-semibold text-purple-700">≥95%</div>
+                <div className="text-sm text-purple-800">20 points awarded</div>
+              </div>
+              <div className="font-bold text-purple-700">+20</div>
+            </div>
+            <div className="p-4 rounded-xl bg-red-50 border-2 border-red-200 text-red-700">
+              <div className="font-semibold">No Item Detected</div>
+              <div className="text-sm">No recyclable item detected → 0 points.</div>
             </div>
           </CardContent>
         </Card>
@@ -205,7 +161,7 @@ const ScanDisposal = () => {
 
       {/* Points Preview */}
       {aiDetectionResult && (
-        <Card className="border-eco-light/30 bg-gradient-reward">
+        <Card className="border-eco-light/30 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-3xl shadow-xl mx-4 md:mx-6">
           <CardContent className="p-6 text-center">
             <h3 className="text-white font-semibold text-lg mb-2">Points Preview</h3>
             <div className="text-3xl font-bold text-white">
@@ -218,6 +174,7 @@ const ScanDisposal = () => {
           </CardContent>
         </Card>
       )}
+
 
       {/* Camera Modal */}
       {showCamera && (

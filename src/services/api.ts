@@ -40,6 +40,10 @@ class ApiService {
       headers: this.getAuthHeaders(),
     });
     if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('access_token');
+        throw new Error('Session expired');
+      }
       const err = await response.json().catch(() => ({}));
       const msg = err?.detail?.message || err?.detail || `GET ${url} failed (${response.status})`;
       throw new Error(msg);
@@ -54,6 +58,10 @@ class ApiService {
       body: JSON.stringify(body),
     });
     if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('access_token');
+        throw new Error('Session expired');
+      }
       const err = await response.json().catch(() => ({}));
       const msg = err?.detail?.message || err?.detail || `POST ${url} failed (${response.status})`;
       throw new Error(msg);
@@ -138,6 +146,46 @@ class ApiService {
   async checkHealth(): Promise<any> {
     const response = await fetch(`${API_BASE_URL}/health`);
     return response.json();
+  }
+
+  // Profiles
+  async ensureProfile(): Promise<any> {
+    return this.post(`${API_BASE_URL}/api/profiles/ensure`, {});
+  }
+
+  async getProfile(): Promise<any> {
+    return this.get(`${API_BASE_URL}/api/profiles/me`);
+  }
+
+  async addPoints(points: number, increment_disposals = true): Promise<any> {
+    return this.post(`${API_BASE_URL}/api/profiles/points/add`, { points, increment_disposals });
+  }
+
+  // Disposals
+  async createDisposal(payload: { waste_type: string; points_earned: number; bin_id?: number | null; weight?: number | null; }): Promise<any> {
+    return this.post(`${API_BASE_URL}/api/disposals/`, payload);
+  }
+
+  async getRecentDisposals(limit = 5): Promise<any[]> {
+    return this.get(`${API_BASE_URL}/api/disposals/recent?limit=${limit}`);
+  }
+
+  // Waste detection
+  async detectWaste(image_data_base64: string, location?: { lat?: number; lng?: number }): Promise<any> {
+    return this.post(`${API_BASE_URL}/api/waste/detect`, {
+      image_data: image_data_base64,
+      location_lat: location?.lat,
+      location_lng: location?.lng
+    });
+  }
+
+  // Analytics
+  async getDashboardAnalytics(): Promise<any> {
+    return this.get(`${API_BASE_URL}/api/analytics/dashboard`);
+  }
+
+  async getLeaderboard(): Promise<any> {
+    return this.get(`${API_BASE_URL}/api/analytics/leaderboard`);
   }
 }
 

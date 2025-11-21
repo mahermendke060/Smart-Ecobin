@@ -76,18 +76,12 @@ const Settings = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-eco mb-2">Settings</h1>
-        <p className="text-muted-foreground text-lg">
-          Manage your account and app preferences
-        </p>
-      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Password Settings */}
-        <Card className="border-eco-light/30">
+        <Card className="border-emerald-200 rounded-3xl shadow-xl">
           <CardHeader>
-            <CardTitle className="text-eco">Change Password</CardTitle>
+            <CardTitle className="text-emerald-700 text-2xl">Change Password</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -99,13 +93,13 @@ const Settings = () => {
                   value={passwordData.currentPassword}
                   onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
                   placeholder="Enter current password"
-                  className="pr-10 border-eco-light/50 focus:border-eco"
+                  className="pr-10 bg-gray-50 border-2 border-emerald-200 rounded-xl focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
                 />
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="absolute right-1 top-1 h-8 w-8 p-0"
+                  className="absolute right-1 top-1 h-8 w-8 p-0 text-emerald-600 hover:text-emerald-700"
                   onClick={() => togglePasswordVisibility('current')}
                 >
                   {showPasswords.current ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -122,13 +116,13 @@ const Settings = () => {
                   value={passwordData.newPassword}
                   onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
                   placeholder="Enter new password"
-                  className="pr-10 border-eco-light/50 focus:border-eco"
+                  className="pr-10 bg-gray-50 border-2 border-emerald-200 rounded-xl focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
                 />
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="absolute right-1 top-1 h-8 w-8 p-0"
+                  className="absolute right-1 top-1 h-8 w-8 p-0 text-emerald-600 hover:text-emerald-700"
                   onClick={() => togglePasswordVisibility('new')}
                 >
                   {showPasswords.new ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -145,13 +139,13 @@ const Settings = () => {
                   value={passwordData.confirmPassword}
                   onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
                   placeholder="Confirm new password"
-                  className="pr-10 border-eco-light/50 focus:border-eco"
+                  className="pr-10 bg-gray-50 border-2 border-emerald-200 rounded-xl focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
                 />
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="absolute right-1 top-1 h-8 w-8 p-0"
+                  className="absolute right-1 top-1 h-8 w-8 p-0 text-emerald-600 hover:text-emerald-700"
                   onClick={() => togglePasswordVisibility('confirm')}
                 >
                   {showPasswords.confirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -162,7 +156,7 @@ const Settings = () => {
             <Button
               onClick={updatePassword}
               disabled={loading}
-              className="w-full bg-eco hover:bg-eco-dark"
+              className="w-full py-4 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700"
             >
               Update Password
             </Button>

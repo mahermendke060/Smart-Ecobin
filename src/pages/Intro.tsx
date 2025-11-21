@@ -15,6 +15,10 @@ import earnPhoto from '@/assets/earn.jpg';
 const Intro = () => {
   const navigate = useNavigate();
   const [mounted, setMounted] = useState(false);
+  const scrollTo = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   useEffect(() => {
     const t = setTimeout(() => setMounted(true), 50);
@@ -35,16 +39,12 @@ const Intro = () => {
         <path d="M340 80c90 40 150 120 160 200s-30 170-140 200-230-10-270-110 30-200 120-250 140-80 130-40z" fill="#ffffff" />
       </svg>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-6 md:px-8 py-12 md:py-20">
-        <div className={`flex flex-col-reverse md:flex-row items-center gap-12 md:gap-16 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'} transition-all duration-700`}>
+      <div className="relative z-10 max-w-7xl mx-auto px-6 md:px-8 py-6 md:py-12">
+        
+        <div className={`flex flex-col-reverse md:flex-row items-center gap-10 md:gap-12 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'} transition-all duration-700`}>
           {/* Left: Text */}
           <div className={`w-full md:w-1/2 space-y-7 ${mounted ? 'opacity-100 -translate-y-0' : 'opacity-0 translate-y-3'} transition-all duration-700 delay-100`}>
-            <div className="inline-flex items-center gap-3 bg-white/60 backdrop-blur-md rounded-full px-4 py-2 shadow-md shadow-emerald-900/5 ring-1 ring-white/40">
-              <div className="bg-eco/10 p-2 rounded-full">
-                <Recycle className="h-6 w-6 text-eco" />
-              </div>
-              <span className="text-eco font-semibold tracking-wide">Smart EcoBin</span>
-            </div>
+            {/* Brand pill removed per request */}
 
             <h1 className="text-5xl md:text-6xl font-extrabold leading-tight text-foreground">
               Make every disposal count
@@ -96,12 +96,9 @@ const Intro = () => {
             </div>
 
             {/* CTAs */}
-            <div className="pt-2 flex items-center gap-3">
+            <div className="pt-1 flex items-center gap-3">
               <Button onClick={() => navigate('/auth')} size="lg" className="rounded-full px-7 py-6 text-base bg-emerald-600 hover:bg-emerald-700 shadow-[0_10px_30px_-10px_rgba(5,150,105,0.6)] hover:shadow-[0_16px_40px_-10px_rgba(5,150,105,0.7)] transition-all">
                 Start your eco journey
-              </Button>
-              <Button onClick={() => navigate('/auth')} variant="outline" size="lg" className="rounded-full px-7 py-6 text-base border-emerald-700/40 text-emerald-800 hover:bg-white/50 backdrop-blur-md">
-                How it works
               </Button>
             </div>
           </div>
@@ -125,7 +122,7 @@ const Intro = () => {
         </div>
 
         {/* About Section */}
-        <section className="mt-20 grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-16 items-center">
+        <section id="about" className="mt-20 grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-16 items-center">
           <div className="order-2 md:order-1 space-y-5">
             <h2 className="text-3xl md:text-4xl font-extrabold text-foreground">About Smart EcoBin</h2>
             <p className="text-foreground/80 text-lg leading-relaxed">
@@ -179,7 +176,7 @@ const Intro = () => {
         </section>
 
         {/* How It Works */}
-        <section className="mt-24">
+        <section id="how" className="mt-24">
           <h2 className="text-3xl md:text-4xl font-extrabold text-foreground text-center mb-10">How it works</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card className="rounded-2xl bg-white/70 backdrop-blur-md border-white/40">
@@ -187,7 +184,8 @@ const Intro = () => {
                 <img src={scanPhoto} alt="Scan item with guidance" className="w-full h-60 object-cover rounded-t-2xl" loading="lazy" decoding="async" />
                 <div className="p-6">
                   <h3 className="font-semibold mb-1">1. Scan</h3>
-                  <p className="text-foreground/70">Identify the waste item and get instant sorting guidance.</p>
+                  <p className="text-foreground/70 mb-3">Identify the waste item and get instant sorting guidance.</p>
+                  <Button onClick={() => navigate('/auth')} className="bg-emerald-600 hover:bg-emerald-700">Try Scan</Button>
                 </div>
               </CardContent>
             </Card>
@@ -196,7 +194,8 @@ const Intro = () => {
                 <img src={disposePhoto} alt="Dispose in smart bin" className="w-full h-60 object-cover rounded-t-2xl" loading="lazy" decoding="async" />
                 <div className="p-6">
                   <h3 className="font-semibold mb-1">2. Dispose</h3>
-                  <p className="text-foreground/70">Follow bin suggestions for clean, responsible disposal.</p>
+                  <p className="text-foreground/70 mb-3">Follow bin suggestions for clean, responsible disposal.</p>
+                  <Button onClick={() => navigate('/auth')} variant="outline" className="border-emerald-700/40 text-emerald-800">Dispose Right</Button>
                 </div>
               </CardContent>
             </Card>
@@ -205,7 +204,8 @@ const Intro = () => {
                 <img src={earnPhoto} alt="Earn eco rewards" className="w-full h-60 object-cover rounded-t-2xl" loading="lazy" decoding="async" />
                 <div className="p-6">
                   <h3 className="font-semibold mb-1">3. Earn</h3>
-                  <p className="text-foreground/70">Collect eco points and track your positive environmental impact.</p>
+                  <p className="text-foreground/70 mb-3">Collect eco points and track your positive environmental impact.</p>
+                  <Button onClick={() => navigate('/auth')} className="bg-emerald-600 hover:bg-emerald-700">Earn Points</Button>
                 </div>
               </CardContent>
             </Card>

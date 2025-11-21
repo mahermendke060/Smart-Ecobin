@@ -20,6 +20,8 @@ class User(Base):
     waste_detections = relationship("WasteDetection", back_populates="user")
     feedback_submissions = relationship("Feedback", back_populates="user")
     analytics_data = relationship("UserAnalytics", back_populates="user")
+    profiles = relationship("Profile", back_populates="user")
+    disposals = relationship("Disposal", back_populates="user")
 
 class WasteDetection(Base):
     __tablename__ = "waste_detections"
@@ -98,3 +100,32 @@ class VoiceInteraction(Base):
     audio_url = Column(String(500))  # URL to generated audio file
     session_id = Column(String(255))  # For grouping related interactions
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class Profile(Base):
+    __tablename__ = "profiles"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    full_name = Column(String(255))
+    email = Column(String(255))
+    avatar_url = Column(String(500))
+    points = Column(Integer, default=0)
+    total_disposals = Column(Integer, default=0)
+    bins_used = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    user = relationship("User", back_populates="profiles")
+
+class Disposal(Base):
+    __tablename__ = "disposals"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    bin_id = Column(Integer, ForeignKey("bins.id"), nullable=True)
+    waste_type = Column(String(100), nullable=False)
+    points_earned = Column(Integer, default=0)
+    weight = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="disposals")

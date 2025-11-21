@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Search, MapPin, Navigation, Clock, RefreshCw, AlertTriangle, Crosshair, List } from 'lucide-react';
+import { Search, MapPin, Navigation, Clock, RefreshCw, AlertTriangle, Crosshair, List, CheckCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { locationApiService } from '@/services/locationApi';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Bin {
   id: number;
@@ -27,6 +28,7 @@ interface UserLocation {
 }
 
 const BinLocator = () => {
+  const { user } = useAuth();
   const [bins, setBins] = useState<Bin[]>([]);
   const [filteredBins, setFilteredBins] = useState<Bin[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -39,6 +41,7 @@ const BinLocator = () => {
   const [radiusKm, setRadiusKm] = useState<number>(5);
   const [binType, setBinType] = useState<string>('recycling');
   const [detectedLocation, setDetectedLocation] = useState<{ latitude: number; longitude: number; address?: string } | null>(null);
+  const [showMap, setShowMap] = useState(false);
   const watchIdRef = useRef<number | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
   const ranOnceRef = useRef(false);
@@ -400,173 +403,138 @@ const BinLocator = () => {
   }, [radiusKm, binType, locationConfirmed, userLocation]);
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-bold text-eco mb-2">Bin Locator</h1>
+    <div className="min-h-[calc(100vh-8rem)] bg-gradient-to-br from-emerald-50 via-green-50 to-teal-50 rounded-xl">
 
-      {error && (
-        <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 p-3 rounded-md">
-          <AlertTriangle className="h-4 w-4" />
-          <span className="text-sm">{error}</span>
-        </div>
-      )}
+      <div className="p-4 md:p-6 max-w-6xl mx-auto">
+        {error && (
+          <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 p-3 rounded-md">
+            <AlertTriangle className="h-4 w-4" />
+            <span className="text-sm">{error}</span>
+          </div>
+        )}
 
-      {!locationConfirmed && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <MapPin className="h-5 w-5" />
-              Choose location
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="rounded-lg border p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-medium">Use current location</div>
-                  <div className="text-xs text-muted-foreground">We will detect your device location and ask you to confirm</div>
-                    {/* If detected, show inline confirmation */}
-              {detectedLocation && (
-                <div className="mt-3 text-left">
-                  <div className="text-sm text-gray-700 mb-2">
-                    Detected: {detectedLocation.address || `${detectedLocation.latitude.toFixed(6)}, ${detectedLocation.longitude.toFixed(6)}`}
-                  </div>
-                  <Button size="sm" onClick={() => handleLocationConfirm({
-                    latitude: detectedLocation.latitude,
-                    longitude: detectedLocation.longitude,
-                    address: detectedLocation.address || `${detectedLocation.latitude}, ${detectedLocation.longitude}`
-                  })}>
-                    Confirm this location
-                  </Button>
-                </div>
-              )}
-            </div>
-                <Button onClick={handleLocationRequest} disabled={locationLoading} className="sm:w-auto">
-                  <Crosshair className={`h-4 w-4 mr-2 ${locationLoading ? 'animate-spin' : ''}`} />
-                  {locationLoading ? 'Detecting…' : 'Detect Location'}
-                </Button>
-              </div>
+        {!locationConfirmed && (
+          <div className="bg-white rounded-3xl shadow-2xl p-6 md:p-8 mb-6 border-t-4 border-emerald-500">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 bg-emerald-100 rounded-full"><MapPin className="w-6 h-6 text-emerald-600"/></div>
+              <h2 className="text-2xl font-bold text-gray-800">Choose location</h2>
             </div>
 
-            <div className="rounded-lg border p-4">
-              <div className="mb-2 font-medium">Type an address</div>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Enter area, address, or city"
-                  value={manualQuery}
-                  onChange={(e) => setManualQuery(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleManualSearch(); }}
-                />
-                <Button onClick={handleManualSearch} disabled={manualSearching || !manualQuery.trim()}>
-                  {manualSearching ? (
-                    <span className="inline-flex items-center"><RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Locating…</span>
-                  ) : (
-                    'Confirm'
-                  )}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {locationConfirmed && userLocation && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between text-base">
-              <span className="flex items-center gap-2">
-                <MapPin className="h-4 w-4" />
-                Current location confirmed
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {webhookStatus === 'sending' && 'Processing…'}
-                {webhookStatus === 'success' && 'Location submitted'}
-                {webhookStatus === 'error' && 'Submission failed'}
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="text-sm">
-              {userLocation.address || `${userLocation.latitude.toFixed(6)}, ${userLocation.longitude.toFixed(6)}`}
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setLocationConfirmed(false);
-                  setManualQuery(userLocation.address || '');
-                  setWebhookBins([]);
-                  setWebhookStatus('idle');
-                }}
-              >
-                Change Location
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Recommended bins list */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between text-lg">
-            <span className="flex items-center gap-2">
-              <List className="h-4 w-4" />
-              Recommended bins
-            </span>
-            {webhookStatus === 'sending' && (
-              <span className="text-xs text-muted-foreground inline-flex items-center">
-                <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> Loading…
-              </span>
-            )}
-            {webhookStatus !== 'sending' && webhookBins.length > 0 && (
-              <span className="text-xs text-muted-foreground">
-                {(typeof webhookBins[0]?.binCount === 'number' ? webhookBins[0].binCount : webhookBins.length)} found
-              </span>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {webhookStatus === 'sending' && (
-            <div className="text-sm text-muted-foreground inline-flex items-center">
-              <RefreshCw className="h-3 w-3 mr-1 animate-spin" /> Loading recommendations…
-            </div>
-          )}
-          {webhookStatus !== 'sending' && webhookBins && webhookBins.length === 0 && (
-            <div className="text-sm text-muted-foreground">No recommendations yet.</div>
-          )}
-          {webhookBins && webhookBins.length > 0 && (
-            <div className="overflow-x-auto">
-              {webhookBins.map((item: any, idx: number) => (
-                typeof item?.html === 'string' ? (
-                  <div key={idx} onClick={onHtmlItemClick(item)} dangerouslySetInnerHTML={{ __html: item.html }} />
-                ) : (
-                  <div key={item.id ?? idx} className="flex items-center justify-between border rounded-md p-3">
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">
-                        {item.name || 'Bin'}{item.type ? ` · ${item.type}` : ''}
-                      </div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {item.address || (typeof item.latitude === 'number' && typeof item.longitude === 'number' ? `${item.latitude.toFixed?.(6) || item.latitude}, ${item.longitude.toFixed?.(6) || item.longitude}` : '')}
-                      </div>
+            <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-6 mb-4 border-2 border-emerald-200">
+              <div className="flex items-center justify-between">
+                <div className="flex-grow">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-1 flex items-center gap-2">
+                    <Navigation className="w-5 h-5 text-emerald-600"/> Use current location
+                  </h3>
+                  <p className="text-sm text-gray-600">We will detect your device location and ask you to confirm</p>
+                  {detectedLocation && (
+                    <div className="mt-3 text-left">
+                      <div className="text-sm text-gray-700 mb-2">Detected: {detectedLocation.address || `${detectedLocation.latitude.toFixed(6)}, ${detectedLocation.longitude.toFixed(6)}`}</div>
+                      <Button size="sm" onClick={() => handleLocationConfirm({ latitude: detectedLocation.latitude, longitude: detectedLocation.longitude, address: detectedLocation.address || `${detectedLocation.latitude}, ${detectedLocation.longitude}` })}>Confirm this location</Button>
                     </div>
-                    <div className="flex items-center gap-3 ml-3 shrink-0">
-                      <div className="text-xs text-right">
-                        {typeof item.distance === 'number' ? distanceLabel(item.distance) : ''}
+                  )}
+                </div>
+                <Button onClick={handleLocationRequest} disabled={locationLoading} className={`sm:w-auto ${locationLoading ? 'bg-gray-400' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+                  <Crosshair className={`h-4 w-4 mr-2 ${locationLoading ? 'animate-spin' : ''}`} />
+                  {locationLoading ? 'Detecting…' : 'Detect'}
+                </Button>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl p-6 border-2 border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                <Search className="w-5 h-5 text-emerald-600"/> Type an address
+              </h3>
+              <div className="flex gap-3">
+                <Input placeholder="Enter area, address, or city" value={manualQuery} onChange={(e) => setManualQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleManualSearch(); }} className="flex-grow"/>
+                <Button onClick={handleManualSearch} disabled={manualSearching || !manualQuery.trim()} className="bg-emerald-600 hover:bg-emerald-700">
+                  {manualSearching ? (<span className="inline-flex items-center"><RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Locating…</span>) : ('Confirm')}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {locationConfirmed && userLocation && (
+          <div className="bg-emerald-100 border-2 border-emerald-400 rounded-xl p-4 mb-6 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-emerald-800">
+              <CheckCircle className="w-5 h-5"/>
+              <span className="font-semibold">{userLocation.address || `${userLocation.latitude.toFixed(6)}, ${userLocation.longitude.toFixed(6)}`}</span>
+            </div>
+            <div className="text-xs text-emerald-700">
+              {webhookStatus === 'sending' && 'Processing…'}
+              {webhookStatus === 'success' && 'Location submitted'}
+              {webhookStatus === 'error' && 'Submission failed'}
+            </div>
+            <Button variant="outline" size="sm" onClick={() => { setLocationConfirmed(false); setManualQuery(userLocation.address || ''); setWebhookBins([]); setWebhookStatus('idle'); }}>Change</Button>
+          </div>
+        )}
+
+        {showMap && webhookBins.length > 0 && (
+          <div className="bg-white rounded-3xl shadow-2xl p-6 mb-6 border-t-4 border-emerald-500">
+            <div className="bg-gradient-to-br from-emerald-100 to-teal-100 rounded-2xl h-80 flex items-center justify-center border-2 border-emerald-300">
+              <div className="text-center">
+                <List className="w-10 h-10 text-emerald-600 mx-auto mb-2" />
+                <p className="text-emerald-800 font-semibold">Interactive Map View</p>
+                <p className="text-emerald-600 text-sm">Showing {webhookBins.length} nearby bins</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="bg-white rounded-3xl shadow-2xl p-6 md:p-8 border-t-4 border-emerald-500">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-3 bg-emerald-100 rounded-full"><List className="w-6 h-6 text-emerald-600"/></div>
+            <h2 className="text-2xl font-bold text-gray-800">Recommended bins</h2>
+          </div>
+
+          {webhookStatus === 'sending' && (
+            <div className="text-sm text-muted-foreground inline-flex items-center mb-4">
+              <RefreshCw className="h-4 w-4 mr-2 animate-spin"/> Loading recommendations…
+            </div>
+          )}
+
+          {(!webhookBins || webhookBins.length === 0) && webhookStatus !== 'sending' ? (
+            <div className="text-center py-12">
+              <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <MapPin className="w-10 h-10 text-emerald-600"/>
+              </div>
+              <p className="text-gray-500 text-lg">No recommendations yet.</p>
+              <p className="text-gray-400 text-sm mt-2">Choose a location to find nearby recycling bins</p>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {webhookBins.map((item: any, index: number) => (
+                typeof item?.html === 'string' ? (
+                  <div key={index} onClick={onHtmlItemClick(item)} dangerouslySetInnerHTML={{ __html: item.html }} />
+                ) : (
+                  <div key={item.id ?? index} className="bg-gradient-to-r from-white to-emerald-50 rounded-2xl p-6 border-2 border-emerald-200 hover:border-emerald-400 hover:shadow-xl transition-all">
+                    <div className="flex items-start justify-between">
+                      <div className="flex gap-4 flex-grow min-w-0">
+                        <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-md">
+                          <MapPin className="w-6 h-6"/>
+                        </div>
+                        <div className="flex-grow min-w-0">
+                          <h3 className="text-lg font-bold text-gray-800 mb-1 truncate">{item.name || 'Bin'}</h3>
+                          <p className="text-sm text-gray-600 mb-2 truncate">{item.address || (typeof item.latitude === 'number' && typeof item.longitude === 'number' ? `${item.latitude}, ${item.longitude}` : '')}</p>
+                          <div className="flex flex-wrap gap-2 text-xs">
+                            {item.type && <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full font-medium">{item.type}</span>}
+                            {item.hours && <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">{item.hours}</span>}
+                          </div>
+                        </div>
                       </div>
-                      <Button size="sm" variant="outline" onClick={() => { const url = getDirectionsUrl(item); if (url) window.open(url, '_blank'); }}>
-                        🗺️ Directions
-                      </Button>
+                      <div className="text-right ml-4 shrink-0">
+                        <div className="text-2xl font-bold text-emerald-600">{typeof item.distance === 'number' ? (units === 'km' ? `${item.distance.toFixed(1)} km` : `${(item.distance*0.621371).toFixed(1)} mi`) : ''}</div>
+                        <Button className="mt-2 bg-emerald-600 hover:bg-emerald-700" onClick={() => { const url = getDirectionsUrl(item); if (url) window.open(url, '_blank'); }}>Directions</Button>
+                      </div>
                     </div>
                   </div>
                 )
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Modal removed: confirmations now happen inline on the page */}
+        </div>
+      </div>
     </div>
   );
 };

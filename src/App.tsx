@@ -12,6 +12,8 @@ import Dashboard from "./pages/Dashboard";
 import ScanDisposal from "./pages/ScanDisposal";
 import BinLocator from "./pages/BinLocator";
 import Analytics from "./pages/Analytics";
+import Leaderboard from "./pages/Leaderboard";
+import Redemption from "./pages/Redemption";
 import Settings from "./pages/Settings";
 import Feedback from "./components/Feedback";
 import NotFound from "./pages/NotFound";
@@ -33,6 +35,8 @@ const AppRoutes = () => {
         <Route path="/disposal" element={<ScanDisposal />} />
         <Route path="/locator" element={<BinLocator />} />
         <Route path="/analytics" element={<Analytics />} />
+        <Route path="/leaderboard" element={<Leaderboard />} />
+        <Route path="/redemption" element={<Redemption />} />
         <Route path="/feedback" element={<Feedback />} />
         <Route path="/settings" element={<Settings />} />
       </Route>

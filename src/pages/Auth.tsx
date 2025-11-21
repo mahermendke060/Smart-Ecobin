@@ -113,23 +113,28 @@ const Auth = () => {
   // Social login removed for now - can be re-implemented with OAuth providers later
 
   return (
-    <div className="min-h-screen bg-gradient-earth flex items-center justify-center p-4">
-      <Card className="w-full max-w-md shadow-eco border-eco-light/30">
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
-            <div className="bg-eco/10 p-3 rounded-full">
-              <Recycle className="h-8 w-8 text-eco" />
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-green-50 to-teal-50 flex flex-col items-center p-6 relative overflow-hidden">
+      {/* Decorative background */}
+      <div className="absolute top-20 left-20 w-72 h-72 bg-emerald-200/30 rounded-full blur-3xl" />
+      <div className="absolute bottom-20 right-20 w-96 h-96 bg-green-200/30 rounded-full blur-3xl" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-teal-200/20 rounded-full blur-3xl" />
+
+      <Card className="w-full max-w-md shadow-2xl border-white/50 bg-white/80 backdrop-blur-xl rounded-3xl">
+        <CardHeader className="text-center pt-10 pb-6">
+          <div className="flex justify-center mb-6">
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-emerald-400 to-green-600 rounded-2xl shadow-lg">
+              <Recycle className="h-10 w-10 text-white" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold text-eco">
+          <CardTitle className="text-3xl font-bold bg-gradient-to-r from-emerald-700 to-green-700 bg-clip-text text-transparent">
             {isLogin ? 'Welcome Back' : 'Join EcoBin'}
           </CardTitle>
-          <p className="text-muted-foreground">
+          <p className="text-gray-600">
             {isLogin ? 'Continue your eco journey' : 'Start making a difference today'}
           </p>
         </CardHeader>
-        
-        <CardContent className="space-y-6">
+
+        <CardContent className="space-y-6 px-8 pb-8">
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
               <div className="space-y-2">
@@ -145,7 +150,7 @@ const Auth = () => {
                     placeholder="Enter your full name"
                     value={formData.fullName}
                     onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                    className={`pl-10 border-eco-light/50 focus:border-eco ${
+                    className={`pl-10 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 focus:bg-white transition-all ${
                       validationErrors.fullName ? 'border-red-500' : ''
                     }`}
                     required
@@ -177,7 +182,7 @@ const Auth = () => {
                 placeholder="Enter your email"
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className={`pl-10 border-eco-light/50 focus:border-eco ${
+                className={`pl-10 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 focus:bg-white transition-all ${
                   validationErrors.email ? 'border-red-500' : ''
                 }`}
                 required
@@ -208,7 +213,7 @@ const Auth = () => {
                 placeholder="Enter your password"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                className={`pl-10 pr-10 border-eco-light/50 focus:border-eco ${
+                className={`pl-10 pr-10 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 focus:bg-white transition-all ${
                   validationErrors.password ? 'border-red-500' : ''
                 }`}
                 required
@@ -217,7 +222,7 @@ const Auth = () => {
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="absolute right-1 top-1 h-8 w-8 p-0"
+                className="absolute right-1 top-1 h-8 w-8 p-0 text-gray-400 hover:text-emerald-600"
                 onClick={() => setShowPassword(!showPassword)}
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -255,7 +260,7 @@ const Auth = () => {
             
             <Button
               type="submit"
-              className="w-full bg-eco hover:bg-eco-dark"
+              className="w-full py-4 bg-gradient-to-r from-emerald-500 to-green-600 text-white font-semibold rounded-xl hover:shadow-lg hover:shadow-emerald-500/30 transform hover:scale-[1.02] active:scale-[0.98] transition-all"
               disabled={isLoading}
             >
               {isLoading ? 'Loading...' : (isLogin ? 'Sign In' : 'Create Account')}
@@ -263,11 +268,7 @@ const Auth = () => {
           </form>
           
           <div className="text-center">
-            <Button
-              variant="link"
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-eco hover:text-eco-dark"
-            >
+            <Button variant="link" onClick={() => setIsLogin(!isLogin)} className="text-emerald-700 hover:text-emerald-800">
               {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
             </Button>
           </div>

@@ -14,7 +14,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY');
+const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
 
 serve(async (req: Request): Promise<Response> => {
   // Handle CORS preflight requests
@@ -23,8 +23,8 @@ serve(async (req: Request): Promise<Response> => {
   }
 
   try {
-    if (!OPENROUTER_API_KEY) {
-      throw new Error('OpenRouter API key not found');
+    if (!LOVABLE_API_KEY) {
+      throw new Error('Lovable API key not found');
     }
 
     const { image } = await req.json();
@@ -39,63 +39,53 @@ serve(async (req: Request): Promise<Response> => {
       );
     }
 
-    console.log('Analyzing image with OpenRouter AI...');
+    console.log('Analyzing image with Lovable AI...');
 
-    // Determine a valid site URL for OpenRouter referer checking
-    const appUrl =
-      Deno.env.get('APP_URL') ||
-      req.headers.get('origin') ||
-      req.headers.get('referer') ||
-      'http://localhost:5173';
-
-    // Pin to a low-cost/free model to avoid 402 credit errors
-    const models = [
-      'google/gemini-1.5-flash'
-    ];
-
-    let response: Response | null = null;
-    let lastError: string | undefined;
-
-    for (const model of models) {
-      console.log(`Attempting OpenRouter model: ${model}`);
-      response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': appUrl,
-          'X-Title': 'EcoBin Waste Detection',
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash',
+        messages: [
           {
             role: 'user',
             content: [
               {
                 type: 'text',
-                text: `Analyze this image and determine if it contains recyclable waste or garbage. 
-                
-                Please respond with a JSON object in this exact format:
-                {
-                  "isGarbage": true/false,
-                  "confidence": 0.0-1.0,
-                  "wasteType": "plastic|paper|metal|organic|glass|electronic|other|none",
-                  "description": "brief description of what you see",
-                  "pointsEarned": 0-50
-                }
-                
-                Rules for point calculation:
-                - Plastic items: 10-15 points based on size/quantity
-                - Paper items: 8-12 points
-                - Metal cans/items: 15-20 points
-                - Glass bottles/jars: 12-18 points
-                - Electronic items: 20-30 points
-                - Organic waste: 5-10 points
-                - Mixed recyclables: bonus points
-                - Non-recyclable items: 0 points
-                
-                Only award points for clearly identifiable recyclable waste. If image is unclear, blurry, or doesn't contain waste, set isGarbage to false and pointsEarned to 0.`
+                text: `You are a waste detection AI for an eco-rewards app. Analyze this image to detect recyclable waste.
+
+CRITICAL: If you detect ANY recyclable waste, you MUST award points. Users are scanning to earn rewards!
+
+Respond with this exact JSON format:
+{
+  "isGarbage": true/false,
+  "confidence": 0.0-1.0,
+  "wasteType": "plastic|paper|metal|organic|glass|electronic|other|none",
+  "description": "brief description of what you see",
+  "pointsEarned": 0-50
+}
+
+POINT CALCULATION RULES (MANDATORY):
+- If isGarbage is TRUE (recyclable detected), pointsEarned MUST be > 0
+- Plastic items (bottles, bags, packaging): 10-15 points
+- Paper/cardboard: 8-12 points
+- Metal cans/items: 15-20 points
+- Glass bottles/jars: 12-18 points
+- Electronics: 20-30 points
+- Organic waste: 5-10 points
+- Multiple items: add bonus points
+
+EXAMPLES:
+✅ Plastic bag detected → isGarbage: true, pointsEarned: 12
+✅ Paper detected → isGarbage: true, pointsEarned: 10
+✅ Metal can detected → isGarbage: true, pointsEarned: 15
+❌ No waste visible → isGarbage: false, pointsEarned: 0
+❌ Blurry/unclear image → isGarbage: false, pointsEarned: 0
+
+Remember: Detected recyclable waste = points awarded!`
               },
               {
                 type: 'image_url',
@@ -106,34 +96,29 @@ serve(async (req: Request): Promise<Response> => {
             ]
           }
         ],
-        max_tokens: 120,
-        temperature: 0.2
-        })
-      });
+        max_tokens: 300,
+        temperature: 0.3
+      })
+    });
 
-      if (response.ok) break;
-
+    if (!response.ok) {
       const errorText = await response.text();
-      lastError = `status=${response.status} body=${errorText}`;
-      console.error('OpenRouter API error:', model, lastError);
-
-      // Try next model for common client-side issues like missing model (404),
-      // bad request (400), or insufficient credits (402). Break for other statuses.
-      if (![400, 402, 404].includes(response.status)) {
-        break;
+      console.error('Lovable AI error:', response.status, errorText);
+      
+      let errorMessage = 'AI analysis failed';
+      if (response.status === 429) {
+        errorMessage = 'Rate limit exceeded. Please try again in a moment.';
+      } else if (response.status === 402) {
+        errorMessage = 'AI credits exhausted. Please add credits to continue.';
       }
-    }
-
-    if (!response || !response.ok) {
-      const status = response?.status || 500;
-      const bodyText = lastError || 'unknown error';
+      
       return new Response(
         JSON.stringify({
-          error: 'OpenRouter request failed',
-          details: bodyText,
+          error: errorMessage,
+          details: errorText,
         }),
         {
-          status,
+          status: response.status,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       );
@@ -179,7 +164,13 @@ serve(async (req: Request): Promise<Response> => {
       pointsEarned: Math.max(0, Math.min(50, Number(analysisResult.pointsEarned) || 0))
     };
 
+    console.log('Raw AI result:', analysisResult);
     console.log('Validated result:', validatedResult);
+    
+    // Safety check: if waste is detected but no points awarded, log warning
+    if (validatedResult.isGarbage && validatedResult.pointsEarned === 0) {
+      console.warn('WARNING: Waste detected but 0 points awarded!', validatedResult);
+    }
 
     return new Response(
       JSON.stringify(validatedResult),

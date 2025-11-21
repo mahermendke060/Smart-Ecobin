@@ -3,7 +3,7 @@ import { Camera, Upload, X, CheckCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { apiService } from '@/services/api';
 
 interface CameraCaptureProps {
   onImageCaptured: (
@@ -14,6 +14,7 @@ interface CameraCaptureProps {
       wasteType: string;
       description: string;
       pointsEarned: number;
+      itemName: string;
     }
   ) => void;
   onClose: () => void;
@@ -35,55 +36,47 @@ export const CameraCapture = ({ onImageCaptured, onClose }: CameraCaptureProps) 
     return new Blob([u8arr], { type: mime });
   };
 
-  const uploadToStorage = async (imageData: string): Promise<string | null> => {
-    try {
-      const blob = dataUrlToBlob(imageData);
-      const fileName = `detect/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
-      const { error: uploadErr } = await supabase.storage
-        .from('detection-images')
-        .upload(fileName, blob, { contentType: blob.type, upsert: true });
-      if (uploadErr) {
-        console.warn('Storage upload failed, falling back to data URL:', uploadErr);
-        return null;
-      }
-      const { data } = supabase.storage.from('detection-images').getPublicUrl(fileName);
-      return data?.publicUrl || null;
-    } catch (e) {
-      console.warn('Storage upload exception, falling back to data URL:', e);
-      return null;
-    }
-  };
-
   const analyzeImage = async (imageData: string) => {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      toast({ title: 'Not signed in', description: 'Please log in to use AI detection.', variant: 'destructive' });
+      return;
+    }
     setIsAnalyzing(true);
     try {
-      // Prefer public URL to avoid large data URLs to the Edge Function
-      const publicUrl = await uploadToStorage(imageData);
-      const payloadImage = publicUrl || imageData;
+      // Strip header and send pure base64 to backend
+      const base64 = imageData.includes(',') ? imageData.split(',')[1] : imageData;
+      const data = await apiService.detectWaste(base64);
 
-      const { data, error } = await supabase.functions.invoke('detect-garbage', {
-        body: { image: payloadImage }
+      // Expecting response with detected items
+      // Backend returns WasteDetectionResponse with detected_items
+      const items: Array<{ bin_type: string; item: string; confidence: number; disposal_method: string; }> = data?.detected_items || [];
+      const recyclable = items.find((i) => i.bin_type === 'recycling');
+      const isGarbage = !!recyclable;
+      const confidence = recyclable ? recyclable.confidence : (items[0]?.confidence ?? 0.5);
+      const wasteType = recyclable ? 'recyclable' : (items[0]?.bin_type ?? 'general');
+      const description = recyclable ? `Detected ${recyclable.item}.` : 'No recyclable waste confidently detected.';
+      const itemName = recyclable?.item || items[0]?.item || (wasteType === 'recycling' ? 'Recyclable Item' : 'Item');
+      // Quantize points to 5/10/15/20 buckets based on confidence
+      const bucketPoints = (c: number) => {
+        if (c >= 0.95) return 20;
+        if (c >= 0.85) return 15;
+        if (c >= 0.60) return 10;
+        return 5;
+      };
+      const pointsEarned = isGarbage ? bucketPoints(confidence || 0.5) : 0;
+
+      onImageCaptured(imageData, {
+        isGarbage,
+        confidence,
+        wasteType,
+        description,
+        pointsEarned,
+        itemName
       });
-
-      if (error) {
-        throw error;
-      }
-
-      return data;
-    } catch (error: any) {
-      console.error('Error analyzing image:', error);
-      // Try to surface more helpful error details from Edge Function
-      const message =
-        error?.context?.body?.details ||
-        error?.context?.body?.error ||
-        error?.message ||
-        'Failed to analyze the image. Please try again.';
-      toast({
-        title: 'Analysis Error',
-        description: String(message).slice(0, 300),
-        variant: 'destructive',
-      });
-      return null;
+    } catch (e: any) {
+      console.error('Detection failed', e);
+      toast({ title: 'Detection failed', description: e?.message || 'Please try again.', variant: 'destructive' });
     } finally {
       setIsAnalyzing(false);
     }
